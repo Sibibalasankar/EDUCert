@@ -37,122 +37,182 @@ const StudentManagement = () => {
   const batches = generateBatchYears();
   const programs = getAllPrograms();
 
-  useEffect(() => {
-    // Load mock students data with realistic data
-    setTimeout(() => {
-      const mockStudents = [
-        {
-          _id: '1',
-          name: 'Sibi B S',
-          registerNumber: '21AI001',
-          email: 'sibi@college.edu',
-          course: 'B.TECH - ARTIFICIAL INTELLIGENCE AND DATA SCIENCE',
-          degree: 'B.Tech',
-          cgpa: '8.9',
-          walletAddress: '0x742d35Cc6634C0532925a3b8D',
-          phone: '+91 9876543210',
-          department: 'AI & DS',
-          program: 'ai_ds',
-          yearOfAdmission: 2021,
-          yearOfPassing: 2025,
-          currentSemester: 7,
-          batch: '2021-2025',
-          createdAt: new Date().toISOString()
-        },
-        {
-          _id: '2',
-          name: 'John Doe',
-          registerNumber: '21CS002',
-          email: 'john@college.edu',
-          course: 'B.E - COMPUTER SCIENCE AND ENGINEERING',
-          degree: 'B.E',
-          cgpa: '9.2',
-          walletAddress: '0x892d35Cc6634C0532925a3b8E',
-          phone: '+91 9876543211',
-          department: 'CSE',
-          program: 'cse',
-          yearOfAdmission: 2021,
-          yearOfPassing: 2025,
-          currentSemester: 7,
-          batch: '2021-2025',
-          createdAt: new Date().toISOString()
-        },
-        {
-          _id: '3',
-          name: 'Alice Johnson',
-          registerNumber: '23EC001',
-          email: 'alice@college.edu',
-          course: 'B.E - ELECTRONICS & COMMUNICATION ENGINEERING',
-          degree: 'B.E',
-          cgpa: '8.5',
-          walletAddress: '0x992d35Cc6634C0532925a3b8F',
-          phone: '+91 9876543212',
-          department: 'ECE',
-          program: 'ece',
-          yearOfAdmission: 2023,
-          yearOfPassing: 2027,
-          currentSemester: 3,
-          batch: '2023-2027',
-          createdAt: new Date().toISOString()
-        },
-        {
-          _id: '4',
-          name: 'Bob Smith',
-          registerNumber: '22ME001',
-          email: 'bob@college.edu',
-          course: 'B.E - MECHANICAL ENGINEERING',
-          degree: 'B.E',
-          cgpa: '8.1',
-          walletAddress: '0x662d35Cc6634C0532925a3b8G',
-          phone: '+91 9876543213',
-          department: 'MECH',
-          program: 'mech',
-          yearOfAdmission: 2022,
-          yearOfPassing: 2026,
-          currentSemester: 5,
-          batch: '2022-2026',
-          createdAt: new Date().toISOString()
-        },
-        {
-          _id: '5',
-          name: 'Emma Wilson',
-          registerNumber: '21IT001',
-          email: 'emma@college.edu',
-          course: 'B.TECH - INFORMATION TECHNOLOGY',
-          degree: 'B.Tech',
-          cgpa: '9.0',
-          walletAddress: '0x772d35Cc6634C0532925a3b8H',
-          phone: '+91 9876543214',
-          department: 'IT',
-          program: 'it',
-          yearOfAdmission: 2021,
-          yearOfPassing: 2025,
-          currentSemester: 7,
-          batch: '2021-2025',
-          createdAt: new Date().toISOString()
-        },
-        {
-          _id: '6',
-          name: 'Michael Brown',
-          registerNumber: '23CSBS001',
-          email: 'michael@college.edu',
-          course: 'B.TECH - COMPUTER SCIENCE AND BUSINESS SYSTEMS',
-          degree: 'B.Tech',
-          cgpa: '8.7',
-          walletAddress: '0x882d35Cc6634C0532925a3b8I',
-          phone: '+91 9876543215',
-          department: 'CSBS',
-          program: 'csbs',
-          yearOfAdmission: 2023,
-          yearOfPassing: 2027,
-          currentSemester: 3,
-          batch: '2023-2027',
-          createdAt: new Date().toISOString()
-        }
-      ];
-      setStudents(mockStudents);
+
+  // Fetch students from backend
+  const fetchStudents = async () => {
+    try {
+      setLoading(true);
+      console.log('📡 Fetching students from backend...');
+      
+      // For now, we'll use mock data but structure it for future backend integration
+      // In Phase 3, we'll replace this with actual API calls
+      setTimeout(() => {
+        const mockStudents = [
+          {
+            _id: '1',
+            name: 'Sibi B S',
+            registerNumber: '21AI001',
+            email: 'sibi@college.edu',
+            course: 'B.TECH - ARTIFICIAL INTELLIGENCE AND DATA SCIENCE',
+            degree: 'B.Tech',
+            cgpa: '8.9',
+            walletAddress: '0x742d35Cc6634C0532925a3b8D',
+            phone: '+91 9876543210',
+            department: 'AI & DS',
+            program: 'ai_ds',
+            yearOfAdmission: 2021,
+            yearOfPassing: 2025,
+            currentSemester: 7,
+            batch: '2021-2025',
+            createdAt: new Date().toISOString()
+          },
+          {
+            _id: '2',
+            name: 'John Doe',
+            registerNumber: '21CS002',
+            email: 'john@college.edu',
+            course: 'B.E - COMPUTER SCIENCE AND ENGINEERING',
+            degree: 'B.E',
+            cgpa: '9.2',
+            walletAddress: '0x892d35Cc6634C0532925a3b8E',
+            phone: '+91 9876543211',
+            department: 'CSE',
+            program: 'cse',
+            yearOfAdmission: 2021,
+            yearOfPassing: 2025,
+            currentSemester: 7,
+            batch: '2021-2025',
+            createdAt: new Date().toISOString()
+          },
+          {
+            _id: '3',
+            name: 'Alice Johnson',
+            registerNumber: '23EC001',
+            email: 'alice@college.edu',
+            course: 'B.E - ELECTRONICS & COMMUNICATION ENGINEERING',
+            degree: 'B.E',
+            cgpa: '8.5',
+            walletAddress: '0x992d35Cc6634C0532925a3b8F',
+            phone: '+91 9876543212',
+            department: 'ECE',
+            program: 'ece',
+            yearOfAdmission: 2023,
+            yearOfPassing: 2027,
+            currentSemester: 3,
+            batch: '2023-2027',
+            createdAt: new Date().toISOString()
+          },
+          {
+            _id: '4',
+            name: 'Bob Smith',
+            registerNumber: '22ME001',
+            email: 'bob@college.edu',
+            course: 'B.E - MECHANICAL ENGINEERING',
+            degree: 'B.E',
+            cgpa: '8.1',
+            walletAddress: '0x662d35Cc6634C0532925a3b8G',
+            phone: '+91 9876543213',
+            department: 'MECH',
+            program: 'mech',
+            yearOfAdmission: 2022,
+            yearOfPassing: 2026,
+            currentSemester: 5,
+            batch: '2022-2026',
+            createdAt: new Date().toISOString()
+          },
+          {
+            _id: '5',
+            name: 'Emma Wilson',
+            registerNumber: '21IT001',
+            email: 'emma@college.edu',
+            course: 'B.TECH - INFORMATION TECHNOLOGY',
+            degree: 'B.Tech',
+            cgpa: '9.0',
+            walletAddress: '0x772d35Cc6634C0532925a3b8H',
+            phone: '+91 9876543214',
+            department: 'IT',
+            program: 'it',
+            yearOfAdmission: 2021,
+            yearOfPassing: 2025,
+            currentSemester: 7,
+            batch: '2021-2025',
+            createdAt: new Date().toISOString()
+          },
+          {
+            _id: '6',
+            name: 'Michael Brown',
+            registerNumber: '23CSBS001',
+            email: 'michael@college.edu',
+            course: 'B.TECH - COMPUTER SCIENCE AND BUSINESS SYSTEMS',
+            degree: 'B.Tech',
+            cgpa: '8.7',
+            walletAddress: '0x882d35Cc6634C0532925a3b8I',
+            phone: '+91 9876543215',
+            department: 'CSBS',
+            program: 'csbs',
+            yearOfAdmission: 2023,
+            yearOfPassing: 2027,
+            currentSemester: 3,
+            batch: '2023-2027',
+            createdAt: new Date().toISOString()
+          }
+        ];
+        setStudents(mockStudents);
+        setLoading(false);
+        console.log(`✅ Loaded ${mockStudents.length} students`);
+      }, 1000);
+
+    } catch (error) {
+      console.error('❌ Error fetching students:', error);
       setLoading(false);
-    }, 1000);
+    }
+  };
+
+  // Save student to backend
+  const saveStudentToBackend = async (studentData) => {
+    try {
+      // For Phase 2, we'll simulate backend save
+      // In Phase 3, we'll implement actual API calls
+      console.log('💾 Saving student to backend:', studentData);
+      
+      // Simulate API call
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            success: true,
+            data: {
+              ...studentData,
+              _id: studentData._id || Date.now().toString(),
+              createdAt: new Date().toISOString()
+            }
+          });
+        }, 500);
+      });
+    } catch (error) {
+      console.error('Error saving student:', error);
+      throw error;
+    }
+  };
+
+  // Delete student from backend
+  const deleteStudentFromBackend = async (studentId) => {
+    try {
+      console.log('🗑️ Deleting student from backend:', studentId);
+      
+      // Simulate API call
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({ success: true });
+        }, 300);
+      });
+    } catch (error) {
+      console.error('Error deleting student:', error);
+      throw error;
+    }
+  };
+
+  useEffect(() => {
+    fetchStudents();
   }, []);
 
   // Filter students based on all criteria
@@ -212,7 +272,7 @@ const StudentManagement = () => {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     const studentData = {
@@ -220,25 +280,32 @@ const StudentManagement = () => {
       batch: `${formData.yearOfAdmission}-${formData.yearOfPassing}`
     };
 
-    if (editingStudent) {
-      // Update existing student
-      setStudents(prev => prev.map(student => 
-        student._id === editingStudent._id 
-          ? { ...student, ...studentData }
-          : student
-      ));
-    } else {
-      // Add new student
-      const newStudent = {
-        _id: Date.now().toString(),
-        ...studentData,
-        createdAt: new Date().toISOString()
-      };
-      setStudents(prev => [...prev, newStudent]);
-    }
+    try {
+      // Save to backend
+      const result = await saveStudentToBackend(studentData);
+      
+      if (result.success) {
+        if (editingStudent) {
+          // Update existing student
+          setStudents(prev => prev.map(student => 
+            student._id === editingStudent._id 
+              ? { ...student, ...result.data }
+              : student
+          ));
+        } else {
+          // Add new student
+          setStudents(prev => [...prev, result.data]);
+        }
 
-    resetForm();
-    setShowForm(false);
+        resetForm();
+        setShowForm(false);
+        
+        console.log('✅ Student saved successfully');
+      }
+    } catch (error) {
+      console.error('❌ Error saving student:', error);
+      alert('Failed to save student. Please try again.');
+    }
   };
 
   const handleEdit = (student) => {
@@ -247,9 +314,20 @@ const StudentManagement = () => {
     setShowForm(true);
   };
 
-  const handleDelete = (studentId) => {
+  const handleDelete = async (studentId) => {
     if (window.confirm('Are you sure you want to delete this student?')) {
-      setStudents(prev => prev.filter(student => student._id !== studentId));
+      try {
+        // Delete from backend
+        const result = await deleteStudentFromBackend(studentId);
+        
+        if (result.success) {
+          setStudents(prev => prev.filter(student => student._id !== studentId));
+          console.log('✅ Student deleted successfully');
+        }
+      } catch (error) {
+        console.error('❌ Error deleting student:', error);
+        alert('Failed to delete student. Please try again.');
+      }
     }
   };
 
@@ -272,6 +350,11 @@ const StudentManagement = () => {
     setEditingStudent(null);
   };
 
+  // Refresh students from backend
+  const refreshStudents = () => {
+    fetchStudents();
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center py-12">
@@ -289,12 +372,23 @@ const StudentManagement = () => {
             <h2 className="text-2xl font-bold text-gray-900">Student Management</h2>
             <p className="text-gray-600 mt-1">Manage student records and academic details</p>
           </div>
-          <button
-            onClick={() => setShowForm(true)}
-            className="mt-4 sm:mt-0 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 font-medium"
-          >
-            Add New Student
-          </button>
+          <div className="flex space-x-3 mt-4 sm:mt-0">
+            <button
+              onClick={refreshStudents}
+              className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 font-medium flex items-center"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
+            <button
+              onClick={() => setShowForm(true)}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 font-medium"
+            >
+              Add New Student
+            </button>
+          </div>
         </div>
       </div>
 
@@ -624,6 +718,9 @@ const StudentManagement = () => {
                     placeholder="0x..."
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    This address will receive the NFT certificate when minted
+                  </p>
                 </div>
               </div>
 

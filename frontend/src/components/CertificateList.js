@@ -8,6 +8,7 @@ const CertificateList = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [viewMode, setViewMode] = useState('grid');
+  const [error, setError] = useState(null);
   
   // Enhanced filter states
   const [selectedDepartment, setSelectedDepartment] = useState('all');
@@ -24,56 +25,68 @@ const CertificateList = () => {
     typeof batch === 'object' ? batch.label : String(batch)
   );
 
+  // Function to fetch certificates from backend
+  const fetchCertificatesFromBackend = async () => {
+    try {
+      console.log('🔗 Fetching certificates from blockchain...');
+      const response = await fetch('http://localhost:5000/api/certificates');
+      
+      if (!response.ok) {
+        throw new Error(`Backend error: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log(`✅ Received ${data.length} certificates from blockchain`);
+      return data;
+    } catch (error) {
+      console.error('❌ Error fetching from backend:', error);
+      throw error;
+    }
+  };
+
+  // Transform backend data to frontend format
+  const transformCertificateData = (backendCertificates) => {
+    return backendCertificates.map(cert => ({
+      _id: cert.tokenId.toString(),
+      tokenId: cert.tokenId,
+      studentName: cert.studentName,
+      registerNumber: cert.registerNumber,
+      email: `${cert.registerNumber.toLowerCase()}@college.edu`,
+      course: cert.course,
+      degree: cert.degree,
+      cgpa: cert.cgpa,
+      certificateType: cert.certificateType,
+      issueDate: cert.issueDate,
+      transactionHash: `0x${Math.random().toString(16).substr(2, 40)}...`, // Placeholder
+      ipfsHash: cert.ipfsHash,
+      status: cert.isRevoked ? 'Revoked' : 'Active',
+      department: cert.department,
+      batch: cert.batch,
+      yearOfPassing: cert.yearOfPassing
+    }));
+  };
+
   useEffect(() => {
     const fetchCertificates = async () => {
       try {
-        // Mock data for Phase 1 with enhanced information
-        setTimeout(() => {
-          const mockCertificates = [
-            {
-              _id: '1',
-              tokenId: 1,
-              studentName: 'Sibi B S',
-              registerNumber: '21AI001',
-              email: 'sibi@college.edu',
-              course: 'B.TECH - ARTIFICIAL INTELLIGENCE AND DATA SCIENCE',
-              degree: 'B.Tech',
-              cgpa: '8.9',
-              certificateType: 'Degree',
-              issueDate: new Date().toISOString(),
-              transactionHash: '0x4af1234567890abcdef1234567890abcdef1234567890abcdef1234567891d3',
-              ipfsHash: 'QmRjD1234567890K7xF',
-              status: 'Active',
-              department: 'AI & DS',
-              batch: '2021-2025',
-              yearOfPassing: 2025
-            },
-            {
-              _id: '2',
-              tokenId: 2,
-              studentName: 'John Doe',
-              registerNumber: '21CS002',
-              email: 'john@college.edu',
-              course: 'B.E - COMPUTER SCIENCE AND ENGINEERING',
-              degree: 'B.E',
-              cgpa: '9.2',
-              certificateType: 'Transcript',
-              issueDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-              transactionHash: '0x4af1234567890abcdef1234567890abcdef1234567890abcdef1234567892e4',
-              ipfsHash: 'QmRjD1234567890K8yG',
-              status: 'Active',
-              department: 'CSE',
-              batch: '2021-2025',
-              yearOfPassing: 2025
-            },
-            // ... other certificate objects
-          ];
-          
-          setCertificates(mockCertificates);
-          setLoading(false);
-        }, 1000);
+        setLoading(true);
+        setError(null);
+        
+        const backendCertificates = await fetchCertificatesFromBackend();
+        
+        if (backendCertificates && backendCertificates.length > 0) {
+          const transformedCertificates = transformCertificateData(backendCertificates);
+          setCertificates(transformedCertificates);
+        } else {
+          // No certificates on blockchain yet
+          setCertificates([]);
+          setError('No certificates found on blockchain. Please mint some certificates first.');
+        }
       } catch (error) {
         console.error('Error fetching certificates:', error);
+        setError(`Failed to connect to blockchain: ${error.message}. Make sure the backend server is running on port 5000.`);
+        setCertificates([]);
+      } finally {
         setLoading(false);
       }
     };
@@ -86,7 +99,7 @@ const CertificateList = () => {
     const matchesSearch = 
       cert.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       cert.registerNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cert.email.toLowerCase().includes(searchTerm.toLowerCase());
+      (cert.email && cert.email.toLowerCase().includes(searchTerm.toLowerCase()));
     
     const matchesType = filter === 'all' || cert.certificateType === filter;
     const matchesDepartment = selectedDepartment === 'all' || cert.department === selectedDepartment;
@@ -104,8 +117,64 @@ const CertificateList = () => {
     setSearchTerm('');
   };
 
+  // Refresh certificates from blockchain
+  const refreshCertificates = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const backendCertificates = await fetchCertificatesFromBackend();
+      if (backendCertificates && backendCertificates.length > 0) {
+        const transformedCertificates = transformCertificateData(backendCertificates);
+        setCertificates(transformedCertificates);
+      } else {
+        setCertificates([]);
+        setError('No certificates found on blockchain.');
+      }
+    } catch (error) {
+      console.error('Error refreshing certificates:', error);
+      setError(`Failed to refresh: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) {
-    return <LoadingSpinner />;
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <LoadingSpinner />
+        <p className="text-center text-gray-600 mt-4">Loading certificates from blockchain...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="text-center">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-8 max-w-2xl mx-auto">
+            <svg className="mx-auto h-12 w-12 text-red-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <h3 className="text-lg font-medium text-red-800 mb-2">Connection Error</h3>
+            <p className="text-red-600 mb-4">{error}</p>
+            <div className="space-y-3">
+              <p className="text-sm text-red-500">Please ensure:</p>
+              <ul className="text-sm text-red-500 text-left max-w-md mx-auto">
+                <li>• Backend server is running on port 5000</li>
+                <li>• Hardhat node is running on port 8545</li>
+                <li>• Certificates have been minted on the blockchain</li>
+              </ul>
+              <button
+                onClick={refreshCertificates}
+                className="mt-4 px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition duration-200"
+              >
+                Try Again
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -116,8 +185,24 @@ const CertificateList = () => {
           Digital Certificates
         </h1>
         <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-          Browse and manage all issued digital certificates
+          Real certificates stored on blockchain
         </p>
+        
+        {/* Refresh Button and Stats */}
+        <div className="mt-4 flex justify-center items-center space-x-4">
+          <button
+            onClick={refreshCertificates}
+            className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition duration-200 flex items-center space-x-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span>Refresh from Blockchain</span>
+          </button>
+          <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+            {certificates.length} certificates on chain
+          </span>
+        </div>
       </div>
 
       {/* Search and Filter Section */}
@@ -260,20 +345,30 @@ const CertificateList = () => {
       {/* Results Count */}
       <div className="mb-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
         <p className="text-blue-800 font-medium">
-          Showing {filteredCertificates.length} of {certificates.length} certificates
+          Showing {filteredCertificates.length} of {certificates.length} certificates from blockchain
           {searchTerm && ` for "${searchTerm}"`}
         </p>
       </div>
 
       {/* Certificates Grid/List */}
-      {filteredCertificates.length === 0 ? (
+      {filteredCertificates.length === 0 && certificates.length > 0 ? (
         <div className="text-center py-16 bg-white rounded-2xl border border-gray-200 shadow-sm">
           <div className="max-w-md mx-auto">
             <svg className="mx-auto h-16 w-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No certificates found</h3>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">No certificates match your filters</h3>
             <p className="text-gray-600">Try adjusting your search or filters to find what you're looking for.</p>
+          </div>
+        </div>
+      ) : filteredCertificates.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-2xl border border-gray-200 shadow-sm">
+          <div className="max-w-md mx-auto">
+            <svg className="mx-auto h-16 w-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">No certificates on blockchain yet</h3>
+            <p className="text-gray-600">Mint some certificates to see them here.</p>
           </div>
         </div>
       ) : (

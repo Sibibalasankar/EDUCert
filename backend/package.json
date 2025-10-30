@@ -11,5 +11,10 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "ethers": "^6.15.0",
+    "express": "^5.1.0"
+  }
 }

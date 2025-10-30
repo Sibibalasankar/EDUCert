@@ -1,35 +1,30 @@
-// scripts/deploy.js
 const { ethers } = require("hardhat");
 
 async function main() {
-  console.log("Deploying EDUCertNFT contract...");
+  console.log("Deploying CertificateNFT contract...");
 
-  const EDUCertNFT = await ethers.getContractFactory("EDUCertNFT");
-  const educert = await EDUCertNFT.deploy();
+  const CertificateNFT = await ethers.getContractFactory("CertificateNFT");
+  const certificateNFT = await CertificateNFT.deploy();
 
-  await educert.waitForDeployment();
+  await certificateNFT.deployed();
 
-  const address = await educert.getAddress();
-  console.log("EDUCertNFT deployed to:", address);
-
-  // Save contract address to frontend
-  const fs = require('fs');
-  const contractAddress = {
-    address: address
+  console.log("CertificateNFT deployed to:", certificateNFT.address);
+  
+  // Save deployment info to a file
+  const fs = require("fs");
+  const deploymentInfo = {
+    contractAddress: certificateNFT.address,
+    deployer: await ethers.provider.getSigner().getAddress(),
+    network: await ethers.provider.getNetwork(),
+    timestamp: new Date().toISOString()
   };
-  
+
   fs.writeFileSync(
-    '../frontend/src/contracts/contract-address.json',
-    JSON.stringify(contractAddress, null, 2)
+    "deployment-info.json",
+    JSON.stringify(deploymentInfo, null, 2)
   );
 
-  // Copy ABI to frontend
-  const contractArtifact = artifacts.readArtifactSync("EDUCertNFT");
-  
-  fs.writeFileSync(
-    '../frontend/src/contracts/EDUCertNFT.json',
-    JSON.stringify(contractArtifact, null, 2)
-  );
+  console.log("Deployment info saved to deployment-info.json");
 }
 
 main()
