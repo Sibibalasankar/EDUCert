@@ -26,38 +26,43 @@ const CertificateForm = ({ onSubmit, students, onCertificateMinted }) => {
   const [showGasInfo, setShowGasInfo] = useState(false);
 
   // Contract configuration
-  const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-  const CONTRACT_ABI = [
-    "function mintCertificate(address studentAddress, string studentName, string registerNumber, string course, string degree, string cgpa, string certificateType, string ipfsHash, string department, string batch, uint256 yearOfPassing) external returns (uint256)",
-    "function collegeAuthorities(address) view returns (bool)",
-    "event CertificateMinted(uint256 indexed tokenId, address indexed studentAddress, string registerNumber, string ipfsHash)"
-  ];
+  // Contract configuration
+  const CONTRACT_ADDRESS = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"; // SAME NEW ADDRESS
+const CONTRACT_ABI = [
+  "function mintCertificate(address studentAddress, string studentName, string registerNumber, string course, string degree, string cgpa, string certificateType, string ipfsHash, string department, string batch, uint256 yearOfPassing) external returns (uint256)",
+  "function getTotalCertificates() view returns (uint256)",
+  "function collegeAuthorities(address) view returns (bool)",
+  "event CertificateMinted(uint256 indexed tokenId, address indexed studentAddress, string registerNumber, string ipfsHash)"
+];
 
   // Connect to MetaMask
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
         console.log('🔗 Connecting to MetaMask...');
-        
-       
-        
-        // Create provider and signer
-        const provider = new ethers.BrowserProvider(window.ethereum);
+
+        // Request account access and get address directly (without ENS)
+        const accounts = await window.ethereum.request({
+          method: 'eth_requestAccounts'
+        });
+        const address = accounts[0];
+
+        // Create provider and signer with ENS disabled
+        const provider = new ethers.BrowserProvider(window.ethereum, "any");
         const signer = await provider.getSigner();
-        const address = await signer.getAddress();
-        
+
         console.log('✅ Connected to:', address);
-        
+
         setCurrentAccount(address);
         setWalletConnected(true);
         setSigner(signer);
-        
+
         // Check if connected account is authorized to mint
         try {
           const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
           const isAuthorized = await contract.collegeAuthorities(address);
           console.log('🔐 Authorization check:', isAuthorized);
-          
+
           if (!isAuthorized) {
             setResult({
               type: 'warning',
@@ -67,7 +72,7 @@ const CertificateForm = ({ onSubmit, students, onCertificateMinted }) => {
         } catch (authError) {
           console.warn('Authorization check failed:', authError);
         }
-        
+
         return { provider, signer, address };
       } catch (error) {
         console.error('❌ Error connecting wallet:', error);
@@ -91,11 +96,14 @@ const CertificateForm = ({ onSubmit, students, onCertificateMinted }) => {
     const checkWalletConnection = async () => {
       if (window.ethereum) {
         try {
-          const provider = new ethers.BrowserProvider(window.ethereum);
-          const accounts = await provider.listAccounts();
+          const accounts = await window.ethereum.request({
+            method: 'eth_accounts'
+          });
           if (accounts.length > 0) {
+            const provider = new ethers.BrowserProvider(window.ethereum, "any");
             const signer = await provider.getSigner();
-            const address = await signer.getAddress();
+            const address = accounts[0];
+
             setCurrentAccount(address);
             setWalletConnected(true);
             setSigner(signer);
@@ -150,25 +158,28 @@ const CertificateForm = ({ onSubmit, students, onCertificateMinted }) => {
     });
   };
 
-  // Real blockchain minting function
-  const mintCertificateOnBlockchain = async (signer) => {
-    console.log('🎯 Starting minting process...');
-    
-    const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-    
-    // Use provided wallet address or fallback to connected account
-    const studentAddress = formData.walletAddress || currentAccount;
-    
-    console.log('📝 Minting certificate for:', {
-      studentAddress,
-      name: formData.name,
-      registerNumber: formData.registerNumber,
-      course: formData.course
-    });
+// Real blockchain minting function - FIXED VERSION
+const mintCertificateOnBlockchain = async (signer) => {
+  console.log('🎯 Starting minting process...');
 
-    // Show gas fee info
-    setShowGasInfo(true);
-    
+  // Use provided wallet address or fallback to connected account
+  const studentAddress = formData.walletAddress || currentAccount;
+
+  console.log('📝 Minting certificate for:', {
+    studentAddress,
+    name: formData.name,
+    registerNumber: formData.registerNumber,
+    course: formData.course
+  });
+
+  // Show gas fee info
+  setShowGasInfo(true);
+
+  try {
+    // Create contract instance with signer
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+    // Call the mintCertificate function directly and wait for the transaction
     const tx = await contract.mintCertificate(
       studentAddress,
       formData.name,
@@ -188,34 +199,57 @@ const CertificateForm = ({ onSubmit, students, onCertificateMinted }) => {
 
     const receipt = await tx.wait();
     console.log('✅ Transaction confirmed:', receipt.hash);
-    
+    console.log('📄 Transaction receipt:', receipt);
+
+    // Get the actual token ID from the event logs
+    let tokenId = null;
+
+    // Parse the event logs to find the token ID
+    if (receipt.logs && receipt.logs.length > 0) {
+      const contractInterface = new ethers.Interface(CONTRACT_ABI);
+      
+      for (const log of receipt.logs) {
+        try {
+          const parsedLog = contractInterface.parseLog(log);
+          if (parsedLog && parsedLog.name === 'CertificateMinted') {
+            tokenId = parsedLog.args.tokenId.toString();
+            console.log('🎫 Found token ID from event:', tokenId);
+            break;
+          }
+        } catch (e) {
+          // Continue to next log if parsing fails
+          continue;
+        }
+      }
+    }
+
+    // If no event found, try to get the latest token ID by calling getTotalCertificates
+    if (!tokenId) {
+      try {
+        const provider = new ethers.JsonRpcProvider('http://localhost:8545');
+        const readContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+        const totalCertificates = await readContract.getTotalCertificates();
+        tokenId = totalCertificates.toString();
+        console.log('🔍 Using total certificates as token ID:', tokenId);
+      } catch (error) {
+        console.warn('⚠️ Could not get token ID from total certificates:', error);
+        tokenId = 'Unknown';
+      }
+    }
+
     // Hide gas info after successful transaction
     setShowGasInfo(false);
-    
-    // Find the CertificateMinted event
-    let tokenId = '1'; // Default fallback
-    
-    try {
-      const event = receipt.logs?.map(log => {
-        try {
-          return contract.interface.parseLog(log);
-        } catch {
-          return null;
-        }
-      }).find(parsed => parsed?.name === 'CertificateMinted');
-      
-      tokenId = event?.args?.tokenId?.toString() || '1';
-      console.log('🎫 Certificate minted with Token ID:', tokenId);
-    } catch (eventError) {
-      console.warn('Could not parse mint event, using default token ID');
-    }
-    
+
     return {
       transactionHash: receipt.hash,
       tokenId: tokenId,
       ipfsHash: formData.ipfsHash
     };
-  };
+  } catch (error) {
+    setShowGasInfo(false);
+    throw error;
+  }
+};
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -287,7 +321,7 @@ const CertificateForm = ({ onSubmit, students, onCertificateMinted }) => {
     } catch (error) {
       console.error('❌ Error minting certificate:', error);
       setShowGasInfo(false);
-      
+
       if (error.code === 'ACTION_REJECTED') {
         setResult({
           type: 'error',
@@ -354,19 +388,19 @@ const CertificateForm = ({ onSubmit, students, onCertificateMinted }) => {
           <p className="text-blue-100 text-sm mt-1">
             Mint certificates directly on the blockchain
           </p>
-          
+
           {/* Wallet Connection Status */}
           <div className="mt-2 flex items-center space-x-2">
             <div className={`w-2 h-2 rounded-full ${walletConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
             <span className="text-blue-100 text-xs">
-              {walletConnected 
-                ? `Connected: ${currentAccount.slice(0, 6)}...${currentAccount.slice(-4)}` 
+              {walletConnected
+                ? `Connected: ${currentAccount.slice(0, 6)}...${currentAccount.slice(-4)}`
                 : 'Wallet not connected'
               }
             </span>
           </div>
         </div>
-        
+
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Gas Fee Notice */}
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -399,7 +433,7 @@ const CertificateForm = ({ onSubmit, students, onCertificateMinted }) => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Type to search students..."
               />
-              
+
               {/* Student Dropdown */}
               {showStudentDropdown && (
                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
@@ -596,7 +630,7 @@ const CertificateForm = ({ onSubmit, students, onCertificateMinted }) => {
             >
               {walletConnected ? 'Reconnect Wallet' : 'Connect Wallet'}
             </button>
-            
+
             <button
               type="submit"
               disabled={loading || !walletConnected}
@@ -616,19 +650,17 @@ const CertificateForm = ({ onSubmit, students, onCertificateMinted }) => {
       </div>
 
       {result && (
-        <div className={`mt-6 p-4 rounded-md border ${
-          result.type === 'success' 
-            ? 'bg-green-50 border-green-200 text-green-800' 
-            : result.type === 'warning'
+        <div className={`mt-6 p-4 rounded-md border ${result.type === 'success'
+          ? 'bg-green-50 border-green-200 text-green-800'
+          : result.type === 'warning'
             ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
             : 'bg-red-50 border-red-200 text-red-800'
-        }`}>
+          }`}>
           <div className="flex items-start">
-            <div className={`flex-shrink-0 w-5 h-5 mt-0.5 ${
-              result.type === 'success' ? 'text-green-400' 
-              : result.type === 'warning' ? 'text-yellow-400' 
-              : 'text-red-400'
-            }`}>
+            <div className={`flex-shrink-0 w-5 h-5 mt-0.5 ${result.type === 'success' ? 'text-green-400'
+              : result.type === 'warning' ? 'text-yellow-400'
+                : 'text-red-400'
+              }`}>
               {result.type === 'success' ? '✓' : result.type === 'warning' ? '⚠' : '✗'}
             </div>
             <div className="ml-3">
@@ -636,7 +668,7 @@ const CertificateForm = ({ onSubmit, students, onCertificateMinted }) => {
               {result.data && (
                 <div className="mt-2 text-sm space-y-1">
                   <p><strong>Token ID:</strong> {result.data.tokenId}</p>
-                  <p><strong>Transaction:</strong> 
+                  <p><strong>Transaction:</strong>
                     <span className="text-blue-600 ml-1 font-mono">
                       {result.data.transactionHash.slice(0, 10)}...{result.data.transactionHash.slice(-8)}
                     </span>

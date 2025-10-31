@@ -56,7 +56,7 @@ const StudentManagement = () => {
             course: 'B.TECH - ARTIFICIAL INTELLIGENCE AND DATA SCIENCE',
             degree: 'B.Tech',
             cgpa: '8.9',
-            walletAddress: '0x742d35Cc6634C0532925a3b8D',
+            walletAddress: '0x6e7bd4a9c0b4695dd21bd7557a6c55ae4676cb1c',
             phone: '+91 9876543210',
             department: 'AI & DS',
             program: 'ai_ds',

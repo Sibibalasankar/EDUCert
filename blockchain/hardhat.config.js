@@ -14,7 +14,11 @@ module.exports = {
   },
   networks: {
     localhost: {
-      url: "http://127.0.0.1:8545"
+      url: "http://127.0.0.1:8545",
+      chainId: 31337,
+      // ADD THESE LINES FOR PERSISTENCE:
+      saveDeployments: true, // Saves deployment info
+      tags: ["local"], // Tags for organization
     },
     sepolia: {
       url: process.env.SEPOLIA_RPC_URL || "",
@@ -29,7 +33,9 @@ module.exports = {
     artifacts: "./artifacts",
     cache: "./cache",
     sources: "./contracts",
-    tests: "./tests"
+    tests: "./tests",
+    // ADD THIS FOR DEPLOYMENT PERSISTENCE:
+    deployments: "./deployments", // This saves deployment data
   },
   mocha: {
     timeout: 40000

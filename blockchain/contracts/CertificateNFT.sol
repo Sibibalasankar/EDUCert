@@ -2,20 +2,14 @@
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-/**
- * @title CertificateNFT
- * @dev NFT contract for issuing educational certificates on blockchain
- */
 contract CertificateNFT is ERC721, Ownable {
     using Counters for Counters.Counter;
-    
     Counters.Counter private _tokenIdCounter;
 
-    // Certificate metadata structure
-    struct CertificateMetadata {
+    struct Certificate {
         string studentName;
         string registerNumber;
         string course;
@@ -30,41 +24,17 @@ contract CertificateNFT is ERC721, Ownable {
         bool isRevoked;
     }
 
-    // Mapping from token ID to certificate metadata
-    mapping(uint256 => CertificateMetadata) public certificates;
-
-    // Mapping from register number to token ID (to prevent duplicates)
+    mapping(uint256 => Certificate) public certificates;
     mapping(string => uint256) public registerNumberToTokenId;
-
-    // Events
-    event CertificateMinted(
-        uint256 indexed tokenId,
-        address indexed studentAddress,
-        string registerNumber,
-        string ipfsHash
-    );
-
-    event CertificateRevoked(
-        uint256 indexed tokenId,
-        string reason
-    );
-
-    // College authorities who can mint certificates
     mapping(address => bool) public collegeAuthorities;
 
-    modifier onlyCollegeAuthority() {
-        require(collegeAuthorities[msg.sender] || msg.sender == owner(), "Not authorized");
-        _;
-    }
+    event CertificateMinted(uint256 indexed tokenId, address indexed studentAddress, string registerNumber, string ipfsHash);
+    event CertificateRevoked(uint256 indexed tokenId);
 
-    constructor() ERC721("EduCert", "EDUCT") {
-        // Add contract deployer as college authority
+    constructor() ERC721("Academic Certificate NFT", "ACERT") {
         collegeAuthorities[msg.sender] = true;
     }
 
-    /**
-     * @dev Mint a new certificate NFT
-     */
     function mintCertificate(
         address studentAddress,
         string memory studentName,
@@ -77,19 +47,14 @@ contract CertificateNFT is ERC721, Ownable {
         string memory department,
         string memory batch,
         uint256 yearOfPassing
-    ) public onlyCollegeAuthority returns (uint256) {
-        // Check if certificate already exists for this register number
-        require(registerNumberToTokenId[registerNumber] == 0, "Certificate already exists");
+    ) external returns (uint256) {
+        require(collegeAuthorities[msg.sender], "Not authorized");
+        require(registerNumberToTokenId[registerNumber] == 0, "Certificate already exists for this register number");
 
-        // Increment token ID
         _tokenIdCounter.increment();
-        uint256 newTokenId = _tokenIdCounter.current();
+        uint256 tokenId = _tokenIdCounter.current();
 
-        // Mint NFT to student
-        _safeMint(studentAddress, newTokenId);
-
-        // Store certificate metadata
-        certificates[newTokenId] = CertificateMetadata({
+        certificates[tokenId] = Certificate({
             studentName: studentName,
             registerNumber: registerNumber,
             course: course,
@@ -104,80 +69,97 @@ contract CertificateNFT is ERC721, Ownable {
             isRevoked: false
         });
 
-        // Map register number to token ID
-        registerNumberToTokenId[registerNumber] = newTokenId;
+        registerNumberToTokenId[registerNumber] = tokenId;
+        _mint(studentAddress, tokenId);
 
-        // Emit event
-        emit CertificateMinted(newTokenId, studentAddress, registerNumber, ipfsHash);
-
-        return newTokenId;
+        emit CertificateMinted(tokenId, studentAddress, registerNumber, ipfsHash);
+        return tokenId;
     }
 
-    /**
-     * @dev Get certificate metadata by token ID
-     */
-    function getCertificate(uint256 tokenId) public view returns (CertificateMetadata memory) {
-        require(_exists(tokenId), "Certificate does not exist");
-        return certificates[tokenId];
-    }
-
-    /**
-     * @dev Get certificate by register number
-     */
-    function getCertificateByRegisterNumber(string memory registerNumber) public view returns (CertificateMetadata memory) {
-        uint256 tokenId = registerNumberToTokenId[registerNumber];
-        require(tokenId != 0, "Certificate not found");
-        return getCertificate(tokenId);
-    }
-
-    /**
-     * @dev Verify certificate authenticity
-     */
-    function verifyCertificate(uint256 tokenId) public view returns (bool) {
-        if (!_exists(tokenId)) return false;
-        CertificateMetadata memory cert = certificates[tokenId];
-        return !cert.isRevoked;
-    }
-
-    /**
-     * @dev Revoke a certificate (only in case of fraud)
-     */
-    function revokeCertificate(uint256 tokenId, string memory reason) public onlyCollegeAuthority {
-        require(_exists(tokenId), "Certificate does not exist");
-        require(!certificates[tokenId].isRevoked, "Certificate already revoked");
-        
-        certificates[tokenId].isRevoked = true;
-        emit CertificateRevoked(tokenId, reason);
-    }
-
-    /**
-     * @dev Add college authority
-     */
-    function addCollegeAuthority(address authority) public onlyOwner {
-        collegeAuthorities[authority] = true;
-    }
-
-    /**
-     * @dev Remove college authority
-     */
-    function removeCollegeAuthority(address authority) public onlyOwner {
-        collegeAuthorities[authority] = false;
-    }
-
-    /**
-     * @dev Get total certificates minted
-     */
+    // Get total number of certificates
     function getTotalCertificates() public view returns (uint256) {
         return _tokenIdCounter.current();
     }
 
-    /**
-     * @dev Override tokenURI to return IPFS link
-     */
-    function tokenURI(uint256 tokenId) public view override returns (string memory) {
-        require(_exists(tokenId), "ERC721Metadata: URI query for nonexistent token");
+    // Get certificate by token ID
+    function getCertificate(uint256 tokenId) public view returns (
+        string memory studentName,
+        string memory registerNumber,
+        string memory course,
+        string memory degree,
+        string memory cgpa,
+        string memory certificateType,
+        uint256 issueDate,
+        string memory ipfsHash,
+        string memory department,
+        string memory batch,
+        uint256 yearOfPassing,
+        bool isRevoked
+    ) {
+        require(_exists(tokenId), "Certificate does not exist");
+        Certificate memory cert = certificates[tokenId];
         
-        string memory ipfsHash = certificates[tokenId].ipfsHash;
-        return string(abi.encodePacked("ipfs://", ipfsHash));
+        return (
+            cert.studentName,
+            cert.registerNumber,
+            cert.course,
+            cert.degree,
+            cert.cgpa,
+            cert.certificateType,
+            cert.issueDate,
+            cert.ipfsHash,
+            cert.department,
+            cert.batch,
+            cert.yearOfPassing,
+            cert.isRevoked
+        );
+    }
+
+    // Get certificate by register number
+    function getCertificateByRegisterNumber(string memory registerNumber) public view returns (
+        string memory studentName,
+        string memory registerNumber_,
+        string memory course,
+        string memory degree,
+        string memory cgpa,
+        string memory certificateType,
+        uint256 issueDate,
+        string memory ipfsHash,
+        string memory department,
+        string memory batch,
+        uint256 yearOfPassing,
+        bool isRevoked
+    ) {
+        uint256 tokenId = registerNumberToTokenId[registerNumber];
+        require(tokenId != 0, "Certificate not found for this register number");
+        
+        return getCertificate(tokenId);
+    }
+
+    // Verify certificate validity
+    function verifyCertificate(uint256 tokenId) public view returns (bool) {
+        return _exists(tokenId) && !certificates[tokenId].isRevoked;
+    }
+
+    // Revoke certificate
+    function revokeCertificate(uint256 tokenId) external onlyOwner {
+        require(_exists(tokenId), "Certificate does not exist");
+        certificates[tokenId].isRevoked = true;
+        emit CertificateRevoked(tokenId);
+    }
+
+    // Add college authority
+    function addCollegeAuthority(address authority) external onlyOwner {
+        collegeAuthorities[authority] = true;
+    }
+
+    // Check if certificate exists for register number
+    function certificateExists(string memory registerNumber) public view returns (bool) {
+        return registerNumberToTokenId[registerNumber] != 0;
+    }
+
+    // Get token ID by register number
+    function getTokenIdByRegisterNumber(string memory registerNumber) public view returns (uint256) {
+        return registerNumberToTokenId[registerNumber];
     }
 }

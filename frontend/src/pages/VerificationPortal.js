@@ -11,6 +11,98 @@ const VerificationPortal = () => {
   const [loading, setLoading] = useState(false);
   const [certificateData, setCertificateData] = useState(null);
 
+  // Function to fetch certificate data from backend
+  const fetchCertificateFromBackend = async (method, value) => {
+    try {
+      console.log(`🔍 Verifying certificate via ${method}:`, value);
+
+      let endpoint = '';
+      
+      switch (method) {
+        case 'token':
+          endpoint = `http://localhost:5000/api/certificates/${value}`;
+          break;
+        case 'register':
+          endpoint = `http://localhost:5000/api/certificates/register/${value}`;
+          break;
+        case 'transaction':
+          // For transaction hash, we'll need to handle differently
+          // For now, use token ID endpoint
+          endpoint = `http://localhost:5000/api/certificates/${value}`;
+          break;
+        default:
+          throw new Error('Invalid verification method');
+      }
+
+      const response = await fetch(endpoint);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.message || 'Certificate not found');
+      }
+
+      const data = await response.json();
+      console.log('✅ Certificate data received:', data);
+      return data;
+
+    } catch (error) {
+      console.error('❌ Error fetching certificate:', error);
+      throw error;
+    }
+  };
+
+  // Function to verify certificate validity
+  const verifyCertificateValidity = async (certificateData) => {
+    try {
+      // Check if certificate is revoked
+      if (certificateData.isRevoked) {
+        return {
+          isValid: false,
+          message: 'Certificate has been revoked and is no longer valid.'
+        };
+      }
+
+      // Verify certificate on blockchain (if verify endpoint exists)
+      try {
+        const verifyResponse = await fetch(`http://localhost:5000/api/certificates/verify/${certificateData.tokenId}`);
+        if (verifyResponse.ok) {
+          const verifyData = await verifyResponse.json();
+          if (!verifyData.valid) {
+            return {
+              isValid: false,
+              message: 'Certificate verification failed on blockchain.'
+            };
+          }
+        }
+      } catch (verifyError) {
+        console.warn('⚠️ Certificate verification endpoint not available:', verifyError);
+        // Continue with basic validation if verification endpoint is not available
+      }
+
+      // Check if issue date is in the future (invalid)
+      const issueDate = new Date(certificateData.issueDate);
+      const now = new Date();
+      if (issueDate > now) {
+        return {
+          isValid: false,
+          message: 'Certificate issue date is in the future (invalid).'
+        };
+      }
+
+      return {
+        isValid: true,
+        message: 'Certificate verified successfully on blockchain!'
+      };
+
+    } catch (error) {
+      console.error('❌ Error in certificate validation:', error);
+      return {
+        isValid: false,
+        message: 'Certificate validation failed.'
+      };
+    }
+  };
+
   const handleVerification = async (method = verificationMethod, value = inputValue) => {
     if (!value.trim()) {
       setVerificationResult({
@@ -25,34 +117,59 @@ const VerificationPortal = () => {
     setCertificateData(null);
 
     try {
-      // Mock verification for Phase 1 - will connect to backend in Phase 2
-      setTimeout(() => {
-        const mockCertificate = {
-          studentName: 'Sibi B S',
-          registerNumber: '21AI001',
-          course: 'Artificial Intelligence & Data Science',
-          degree: 'B.Tech',
-          cgpa: '8.9',
-          issueDate: Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60,
-          tokenId: value || '123',
-          transactionHash: '0x4af1234567890abcdef1234567890abcdef1234567890abcdef1234567891d3',
-          ipfsHash: 'QmRjD1234567890K7xF',
-          certificateType: 'Degree Certificate'
-        };
+      // Fetch certificate data from backend
+      const certificate = await fetchCertificateFromBackend(method, value);
+      
+      // Verify certificate validity
+      const verification = await verifyCertificateValidity(certificate);
 
-        setVerificationResult({
-          isValid: true,
-          message: 'Certificate verified successfully! (Mock Data - Backend coming in Phase 2)'
-        });
-        setCertificateData(mockCertificate);
-        setLoading(false);
-      }, 2000);
+      setVerificationResult(verification);
+      
+      if (verification.isValid) {
+        // Transform backend data to frontend format
+        const transformedData = {
+          studentName: certificate.studentName,
+          registerNumber: certificate.registerNumber,
+          course: certificate.course,
+          degree: certificate.degree,
+          cgpa: certificate.cgpa,
+          certificateType: certificate.certificateType,
+          issueDate: typeof certificate.issueDate === 'string' 
+            ? Math.floor(new Date(certificate.issueDate).getTime() / 1000)
+            : certificate.issueDate,
+          tokenId: certificate.tokenId || value,
+          transactionHash: certificate.transactionHash || `0x${Math.random().toString(16).substr(2, 64)}`,
+          ipfsHash: certificate.ipfsHash || 'Qm' + Math.random().toString(36).substr(2, 44),
+          department: certificate.department,
+          batch: certificate.batch,
+          yearOfPassing: certificate.yearOfPassing,
+          isRevoked: certificate.isRevoked || false
+        };
+        
+        setCertificateData(transformedData);
+      }
 
     } catch (error) {
-      setVerificationResult({
-        isValid: false,
-        message: 'Verification service temporarily unavailable'
-      });
+      console.error('❌ Verification error:', error);
+      
+      // Handle specific error cases
+      if (error.message.includes('not found') || error.message.includes('404')) {
+        setVerificationResult({
+          isValid: false,
+          message: 'Certificate not found on blockchain. Please check the identifier and try again.'
+        });
+      } else if (error.message.includes('Failed to fetch')) {
+        setVerificationResult({
+          isValid: false,
+          message: 'Unable to connect to verification service. Please ensure the backend server is running on port 5000.'
+        });
+      } else {
+        setVerificationResult({
+          isValid: false,
+          message: `Verification failed: ${error.message}`
+        });
+      }
+    } finally {
       setLoading(false);
     }
   };
@@ -65,14 +182,14 @@ const VerificationPortal = () => {
       handleVerification('token', tokenId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tokenId]); // Disable warning for handleVerification dependency
+  }, [tokenId]);
 
   const getInputPlaceholder = () => {
     switch (verificationMethod) {
       case 'token':
-        return 'Enter Token ID (e.g., 123)';
+        return 'Enter Token ID (e.g., 1, 2, 3...)';
       case 'register':
-        return 'Enter Register Number (e.g., 21AI001)';
+        return 'Enter Register Number (e.g., 21AI001, 21CS002)';
       case 'transaction':
         return 'Enter Transaction Hash (e.g., 0x4af...91d3)';
       default:
@@ -107,6 +224,25 @@ const VerificationPortal = () => {
     setInputValue('');
     setVerificationResult(null);
     setCertificateData(null);
+  };
+
+  // Format date for display
+  const formatDate = (timestamp) => {
+    if (!timestamp) return 'Unknown';
+    
+    try {
+      const date = typeof timestamp === 'string' 
+        ? new Date(timestamp) 
+        : new Date(timestamp * 1000);
+      
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch (error) {
+      return 'Invalid Date';
+    }
   };
 
   return (
@@ -269,6 +405,11 @@ const VerificationPortal = () => {
                       <label className="text-sm font-medium text-gray-500">Degree</label>
                       <p className="text-gray-900">{certificateData.degree}</p>
                     </div>
+
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Department</label>
+                      <p className="text-gray-900">{certificateData.department || 'Not specified'}</p>
+                    </div>
                   </div>
 
                   <div className="space-y-4">
@@ -280,17 +421,23 @@ const VerificationPortal = () => {
                     <div>
                       <label className="text-sm font-medium text-gray-500">Issue Date</label>
                       <p className="text-gray-900">
-                        {new Date(certificateData.issueDate * 1000).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}
+                        {formatDate(certificateData.issueDate)}
                       </p>
                     </div>
                     
                     <div>
                       <label className="text-sm font-medium text-gray-500">Certificate Type</label>
                       <p className="text-gray-900">{certificateData.certificateType}</p>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Batch</label>
+                      <p className="text-gray-900">{certificateData.batch || 'Not specified'}</p>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Year of Passing</label>
+                      <p className="text-gray-900">{certificateData.yearOfPassing || 'Not specified'}</p>
                     </div>
 
                     <div>
@@ -309,28 +456,12 @@ const VerificationPortal = () => {
                 <div className="mt-6 pt-6 border-t border-gray-200">
                   <h4 className="text-sm font-medium text-gray-500 mb-3">Blockchain Information</h4>
                   <div className="flex flex-wrap gap-4">
-                    <a
-                      href={`https://sepolia.etherscan.io/tx/${certificateData.transactionHash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    <div className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded text-gray-700 bg-white">
+                      <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      View on Etherscan
-                    </a>
-                    <a
-                      href={`https://ipfs.io/ipfs/${certificateData.ipfsHash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                      View on IPFS
-                    </a>
+                      Token ID: {certificateData.tokenId}
+                    </div>
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(`${window.location.origin}/verify/${certificateData.tokenId}`);

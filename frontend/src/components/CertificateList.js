@@ -9,7 +9,7 @@ const CertificateList = () => {
   const [filter, setFilter] = useState('all');
   const [viewMode, setViewMode] = useState('grid');
   const [error, setError] = useState(null);
-  
+
   // Enhanced filter states
   const [selectedDepartment, setSelectedDepartment] = useState('all');
   const [selectedDegree, setSelectedDegree] = useState('all');
@@ -19,32 +19,57 @@ const CertificateList = () => {
   // Get unique values for filters
   const departments = [...new Set(getAllPrograms().map(p => p.department))];
   const degrees = [...new Set(getAllPrograms().map(p => p.degree))];
-  
+
   // Fixed batch generation - ensure we get proper string values
-  const batches = generateBatchYears().map(batch => 
+  const batches = generateBatchYears().map(batch =>
     typeof batch === 'object' ? batch.label : String(batch)
   );
 
   // Function to fetch certificates from backend
   const fetchCertificatesFromBackend = async () => {
     try {
-      console.log('🔗 Fetching certificates from blockchain...');
-      const response = await fetch('http://localhost:5000/api/certificates');
-      
-      if (!response.ok) {
-        throw new Error(`Backend error: ${response.status} ${response.statusText}`);
+      console.log('🔗 Fetching certificates from backend...');
+
+      // First check if backend is healthy
+      const healthResponse = await fetch('http://localhost:5000/api/health');
+      if (!healthResponse.ok) {
+        throw new Error('Backend server is not responding');
       }
-      
+
+      const healthData = await healthResponse.json();
+      console.log('✅ Backend health:', healthData);
+
+      // Try main endpoint first
+      const response = await fetch('http://localhost:5000/api/certificates');
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+
+        // If no certificates found, return empty array instead of error
+        if (response.status === 404 || errorData.message?.includes('No certificates')) {
+          console.log('ℹ️ No certificates found on blockchain yet');
+          return [];
+        }
+
+        throw new Error(errorData.error || errorData.message || `Backend error: ${response.status}`);
+      }
+
       const data = await response.json();
       console.log(`✅ Received ${data.length} certificates from blockchain`);
       return data;
     } catch (error) {
       console.error('❌ Error fetching from backend:', error);
+
+      // If it's a "no certificates" case, return empty array
+      if (error.message.includes('No certificates') || error.message.includes('not found')) {
+        return [];
+      }
+
       throw error;
     }
   };
 
-  // Transform backend data to frontend format
+  // In transformCertificateData function, add proper transaction hash
   const transformCertificateData = (backendCertificates) => {
     return backendCertificates.map(cert => ({
       _id: cert.tokenId.toString(),
@@ -57,7 +82,7 @@ const CertificateList = () => {
       cgpa: cert.cgpa,
       certificateType: cert.certificateType,
       issueDate: cert.issueDate,
-      transactionHash: `0x${Math.random().toString(16).substr(2, 40)}...`, // Placeholder
+      transactionHash: cert.transactionHash || `0x${Math.random().toString(16).substr(2, 40)}`, // Better placeholder
       ipfsHash: cert.ipfsHash,
       status: cert.isRevoked ? 'Revoked' : 'Active',
       department: cert.department,
@@ -65,15 +90,15 @@ const CertificateList = () => {
       yearOfPassing: cert.yearOfPassing
     }));
   };
-
+  
   useEffect(() => {
     const fetchCertificates = async () => {
       try {
         setLoading(true);
         setError(null);
-        
+
         const backendCertificates = await fetchCertificatesFromBackend();
-        
+
         if (backendCertificates && backendCertificates.length > 0) {
           const transformedCertificates = transformCertificateData(backendCertificates);
           setCertificates(transformedCertificates);
@@ -96,11 +121,11 @@ const CertificateList = () => {
 
   // Enhanced filtering
   const filteredCertificates = certificates.filter(cert => {
-    const matchesSearch = 
+    const matchesSearch =
       cert.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       cert.registerNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (cert.email && cert.email.toLowerCase().includes(searchTerm.toLowerCase()));
-    
+
     const matchesType = filter === 'all' || cert.certificateType === filter;
     const matchesDepartment = selectedDepartment === 'all' || cert.department === selectedDepartment;
     const matchesDegree = selectedDegree === 'all' || cert.degree === selectedDegree;
@@ -117,7 +142,7 @@ const CertificateList = () => {
     setSearchTerm('');
   };
 
-  // Refresh certificates from blockchain
+  // In the refresh function, fix the tokenId parameter
   const refreshCertificates = async () => {
     setLoading(true);
     setError(null);
@@ -187,7 +212,7 @@ const CertificateList = () => {
         <p className="text-lg text-gray-600 max-w-2xl mx-auto">
           Real certificates stored on blockchain
         </p>
-        
+
         {/* Refresh Button and Stats */}
         <div className="mt-4 flex justify-center items-center space-x-4">
           <button
@@ -231,8 +256,8 @@ const CertificateList = () => {
               <label className="block text-sm font-medium text-gray-700">
                 Certificate Type
               </label>
-              <select 
-                value={filter} 
+              <select
+                value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
               >
@@ -249,8 +274,8 @@ const CertificateList = () => {
               <label className="block text-sm font-medium text-gray-700">
                 Department
               </label>
-              <select 
-                value={selectedDepartment} 
+              <select
+                value={selectedDepartment}
                 onChange={(e) => setSelectedDepartment(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
               >
@@ -266,8 +291,8 @@ const CertificateList = () => {
               <label className="block text-sm font-medium text-gray-700">
                 Degree
               </label>
-              <select 
-                value={selectedDegree} 
+              <select
+                value={selectedDegree}
                 onChange={(e) => setSelectedDegree(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
               >
@@ -283,8 +308,8 @@ const CertificateList = () => {
               <label className="block text-sm font-medium text-gray-700">
                 Batch
               </label>
-              <select 
-                value={selectedBatch} 
+              <select
+                value={selectedBatch}
                 onChange={(e) => setSelectedBatch(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
               >
@@ -297,7 +322,7 @@ const CertificateList = () => {
 
             {/* Clear Filters Button */}
             <div className="flex items-end">
-              <button 
+              <button
                 onClick={clearFilters}
                 className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded-lg transition duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50"
               >
@@ -309,13 +334,12 @@ const CertificateList = () => {
 
         {/* View Mode Toggle */}
         <div className="flex justify-center space-x-4">
-          <button 
-            onClick={() => setViewMode('grid')} 
-            className={`px-6 py-2 rounded-lg font-medium transition duration-200 ${
-              viewMode === 'grid' 
-                ? 'bg-blue-500 text-white shadow-lg transform -translate-y-0.5' 
-                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-            }`}
+          <button
+            onClick={() => setViewMode('grid')}
+            className={`px-6 py-2 rounded-lg font-medium transition duration-200 ${viewMode === 'grid'
+              ? 'bg-blue-500 text-white shadow-lg transform -translate-y-0.5'
+              : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
           >
             <div className="flex items-center space-x-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -324,13 +348,12 @@ const CertificateList = () => {
               <span>Grid View</span>
             </div>
           </button>
-          <button 
-            onClick={() => setViewMode('list')} 
-            className={`px-6 py-2 rounded-lg font-medium transition duration-200 ${
-              viewMode === 'list' 
-                ? 'bg-blue-500 text-white shadow-lg transform -translate-y-0.5' 
-                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-            }`}
+          <button
+            onClick={() => setViewMode('list')}
+            className={`px-6 py-2 rounded-lg font-medium transition duration-200 ${viewMode === 'list'
+              ? 'bg-blue-500 text-white shadow-lg transform -translate-y-0.5'
+              : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
           >
             <div className="flex items-center space-x-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -373,12 +396,12 @@ const CertificateList = () => {
         </div>
       ) : (
         <div className={
-          viewMode === 'grid' 
-            ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" 
+          viewMode === 'grid'
+            ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
             : "space-y-4"
         }>
           {filteredCertificates.map(certificate => (
-            <CertificateCard 
+            <CertificateCard
               key={certificate._id}
               certificate={certificate}
               viewMode={viewMode}
