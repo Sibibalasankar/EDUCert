@@ -27,7 +27,7 @@ const CertificateForm = ({ onSubmit, students, onCertificateMinted }) => {
 
   // Contract configuration
   // Contract configuration
-  const CONTRACT_ADDRESS = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"; // SAME NEW ADDRESS
+  const CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"; // SAME NEW ADDRESS
 const CONTRACT_ABI = [
   "function mintCertificate(address studentAddress, string studentName, string registerNumber, string course, string degree, string cgpa, string certificateType, string ipfsHash, string department, string batch, uint256 yearOfPassing) external returns (uint256)",
   "function getTotalCertificates() view returns (uint256)",
