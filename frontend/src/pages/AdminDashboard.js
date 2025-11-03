@@ -10,13 +10,14 @@ const AdminDashboard = () => {
   const [recentCertificate, setRecentCertificate] = useState(null);
   const [students, setStudents] = useState([]);
 
-  // Mock students data - will be replaced with backend data
+  // Updated mock students data with proper structure
   useEffect(() => {
     const mockStudents = [
       {
         _id: '1',
         name: 'Sibi B S',
         registerNumber: '21AI001',
+        studentId: '21AI001',
         email: 'sibi@college.edu',
         course: 'Artificial Intelligence & Data Science',
         degree: 'B.Tech',
@@ -24,32 +25,71 @@ const AdminDashboard = () => {
         walletAddress: '0x6e7bd4a9c0b4695dd21bd7557a6c55ae4676cb1c',
         phone: '+91 9876543210',
         department: 'AI & DS',
+        program: 'ai-ds',
         yearOfAdmission: 2021,
         yearOfPassing: 2025,
+        currentSemester: 8,
+        batch: '2021-2025',
+        eligibilityStatus: 'eligible',
+        certificates: [],
         createdAt: new Date().toISOString()
       },
       {
         _id: '2',
         name: 'John Doe',
         registerNumber: '21CS002',
+        studentId: '21CS002',
         email: 'john@college.edu',
         course: 'Computer Science',
         degree: 'B.Tech',
         cgpa: '9.2',
-        walletAddress: '0x892d35Cc6634C0532925a3b8E',
+        walletAddress: '0x892d35Cc6634C0532925a3b8E123456789',
         phone: '+91 9876543211',
         department: 'CSE',
+        program: 'cse',
         yearOfAdmission: 2021,
         yearOfPassing: 2025,
+        currentSemester: 8,
+        batch: '2021-2025',
+        eligibilityStatus: 'eligible',
+        certificates: [],
+        createdAt: new Date().toISOString()
+      },
+      {
+        _id: '3',
+        name: 'Alice Smith',
+        registerNumber: '21EC003',
+        studentId: '21EC003',
+        email: 'alice@college.edu',
+        course: 'Electronics and Communication',
+        degree: 'B.Tech',
+        cgpa: '8.5',
+        walletAddress: '0xabc123def456ghi789jkl012mno345pqr678',
+        phone: '+91 9876543212',
+        department: 'ECE',
+        program: 'ece',
+        yearOfAdmission: 2021,
+        yearOfPassing: 2025,
+        currentSemester: 8,
+        batch: '2021-2025',
+        eligibilityStatus: 'eligible',
+        certificates: [],
         createdAt: new Date().toISOString()
       }
     ];
     setStudents(mockStudents);
+    console.log('📦 AdminDashboard: Mock students loaded', mockStudents);
   }, []);
 
   const handleCertificateIssue = (certificateData) => {
     setRecentCertificate(certificateData);
     setActiveTab('certificates');
+  };
+
+  // Add this function to handle certificate approval
+  const handleCertificateApproved = (result) => {
+    console.log('✅ AdminDashboard: Certificate approved:', result);
+    // You can refresh students data here if needed
   };
 
   if (!isConnected) {
@@ -151,7 +191,13 @@ const AdminDashboard = () => {
         {/* Tab Content */}
         <div>
           {activeTab === 'students' && <StudentManagement />}
-          {activeTab === 'issue' && <CertificateForm onSubmit={handleCertificateIssue} students={students} />}
+          {activeTab === 'issue' && (
+            <CertificateForm 
+              onSubmit={handleCertificateIssue}
+              students={students}
+              onCertificateApproved={handleCertificateApproved}
+            />
+          )}
           {activeTab === 'certificates' && <CertificateList />}
         </div>
 

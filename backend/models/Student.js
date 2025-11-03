@@ -1,46 +1,78 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const studentSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true
-  },
-  registerNumber: {
+  studentId: {
     type: String,
     required: true,
     unique: true
   },
+  name: {
+    type: String,
+    required: true
+  },
   email: {
     type: String,
-    required: true
+    required: true,
+    unique: true
   },
-  course: {
+  department: {
     type: String,
     required: true
   },
-  degree: {
-    type: String,
-    required: true
-  },
-  cgpa: {
-    type: String,
+  yearOfPassing: {
+    type: Number,
     required: true
   },
   walletAddress: {
-    type: String
+    type: String,
+    default: '' // Change from null to empty string
+  },
+  phone: {
+    type: String,
+    default: '' // Add this field with default
+  },
+  cgpa: {
+    type: String,
+    default: '' // Add this field with default
+  },
+  degree: {
+    type: String,
+    default: '' // Add this field with default
+  },
+  currentSemester: {
+    type: Number,
+    default: 1 // Add this field with default
+  },
+  eligibilityStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending'
   },
   certificates: [{
-    tokenId: Number,
-    transactionHash: String,
+    certificateId: String,
     ipfsHash: String,
+    courseName: String,
+    grade: String,
     issueDate: Date,
-    certificateType: String,
-    course: String,
-    degree: String,
-    cgpa: String
-  }]
-}, {
-  timestamps: true
+    transactionHash: String,
+    status: {
+      type: String,
+      enum: ['minted', 'pending'],
+      default: 'pending'
+    }
+  }],
+  approvedBy: {
+    type: String,
+    default: null
+  },
+  approvedAt: {
+    type: Date,
+    default: null
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
 });
 
-module.exports = mongoose.model('Student', studentSchema);
+export default mongoose.model('Student', studentSchema);

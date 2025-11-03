@@ -1,165 +1,197 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-contract CertificateNFT is ERC721, Ownable {
-    using Counters for Counters.Counter;
-    Counters.Counter private _tokenIdCounter;
-
+contract EDUCert is AccessControl, ReentrancyGuard {
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    
     struct Certificate {
+        string studentId;
         string studentName;
-        string registerNumber;
-        string course;
-        string degree;
-        string cgpa;
-        string certificateType;
-        uint256 issueDate;
+        string courseName;
+        string grade;
         string ipfsHash;
-        string department;
-        string batch;
-        uint256 yearOfPassing;
-        bool isRevoked;
+        uint256 issueDate;
+        address mintedBy;
+        bool isMinted;
     }
-
-    mapping(uint256 => Certificate) public certificates;
-    mapping(string => uint256) public registerNumberToTokenId;
-    mapping(address => bool) public collegeAuthorities;
-
-    event CertificateMinted(uint256 indexed tokenId, address indexed studentAddress, string registerNumber, string ipfsHash);
-    event CertificateRevoked(uint256 indexed tokenId);
-
-    constructor() ERC721("Academic Certificate NFT", "ACERT") {
-        collegeAuthorities[msg.sender] = true;
+    
+    struct StudentEligibility {
+        bool isEligible;
+        string studentId;
+        string studentName;
+        string courseName;
+        string grade;
+        string ipfsHash;
+        bool hasMinted;
     }
-
-    function mintCertificate(
-        address studentAddress,
-        string memory studentName,
-        string memory registerNumber,
-        string memory course,
-        string memory degree,
-        string memory cgpa,
-        string memory certificateType,
-        string memory ipfsHash,
-        string memory department,
-        string memory batch,
-        uint256 yearOfPassing
-    ) external returns (uint256) {
-        require(collegeAuthorities[msg.sender], "Not authorized");
-        require(registerNumberToTokenId[registerNumber] == 0, "Certificate already exists for this register number");
-
-        _tokenIdCounter.increment();
-        uint256 tokenId = _tokenIdCounter.current();
-
-        certificates[tokenId] = Certificate({
-            studentName: studentName,
-            registerNumber: registerNumber,
-            course: course,
-            degree: degree,
-            cgpa: cgpa,
-            certificateType: certificateType,
-            issueDate: block.timestamp,
-            ipfsHash: ipfsHash,
-            department: department,
-            batch: batch,
-            yearOfPassing: yearOfPassing,
-            isRevoked: false
-        });
-
-        registerNumberToTokenId[registerNumber] = tokenId;
-        _mint(studentAddress, tokenId);
-
-        emit CertificateMinted(tokenId, studentAddress, registerNumber, ipfsHash);
-        return tokenId;
-    }
-
-    // Get total number of certificates
-    function getTotalCertificates() public view returns (uint256) {
-        return _tokenIdCounter.current();
-    }
-
-    // Get certificate by token ID
-    function getCertificate(uint256 tokenId) public view returns (
-        string memory studentName,
-        string memory registerNumber,
-        string memory course,
-        string memory degree,
-        string memory cgpa,
-        string memory certificateType,
+    
+    // Mappings
+    mapping(string => Certificate) public certificates;
+    mapping(string => StudentEligibility) public studentEligibility;
+    mapping(address => string) public studentAddressToId;
+    
+    // Events
+    event StudentAllowed(
+        string indexed studentId,
+        string studentName,
+        string courseName,
+        string grade,
+        string ipfsHash
+    );
+    
+    event CertificateMinted(
+        string indexed studentId,
+        address mintedBy,
         uint256 issueDate,
+        string ipfsHash
+    );
+    
+    event StudentRevoked(string indexed studentId);
+    
+    constructor() {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(ADMIN_ROLE, msg.sender);
+    }
+    
+    // ADMIN: Allow student to mint certificate
+    function allowStudentToMint(
+        string memory _studentId,
+        string memory _studentName,
+        string memory _courseName,
+        string memory _grade,
+        string memory _ipfsHash
+    ) external onlyRole(ADMIN_ROLE) {
+        require(!studentEligibility[_studentId].isEligible, "Student already eligible");
+        
+        studentEligibility[_studentId] = StudentEligibility({
+            isEligible: true,
+            studentId: _studentId,
+            studentName: _studentName,
+            courseName: _courseName,
+            grade: _grade,
+            ipfsHash: _ipfsHash,
+            hasMinted: false
+        });
+        
+        emit StudentAllowed(_studentId, _studentName, _courseName, _grade, _ipfsHash);
+    }
+    
+    // STUDENT: Mint their own certificate
+    function mintMyCertificate(string memory _studentId) external nonReentrant {
+        StudentEligibility memory eligibility = studentEligibility[_studentId];
+        
+        require(eligibility.isEligible, "Not eligible to mint");
+        require(!eligibility.hasMinted, "Certificate already minted");
+        require(bytes(studentAddressToId[msg.sender]).length == 0, "Address already used for minting");
+        
+        // Create certificate
+        certificates[_studentId] = Certificate({
+            studentId: _studentId,
+            studentName: eligibility.studentName,
+            courseName: eligibility.courseName,
+            grade: eligibility.grade,
+            ipfsHash: eligibility.ipfsHash,
+            issueDate: block.timestamp,
+            mintedBy: msg.sender,
+            isMinted: true
+        });
+        
+        // Update eligibility
+        studentEligibility[_studentId].hasMinted = true;
+        studentAddressToId[msg.sender] = _studentId;
+        
+        emit CertificateMinted(_studentId, msg.sender, block.timestamp, eligibility.ipfsHash);
+    }
+    
+    // STUDENT: Check if they can mint
+    function canIMint(string memory _studentId) external view returns (bool, string memory) {
+        StudentEligibility memory eligibility = studentEligibility[_studentId];
+        
+        if (!eligibility.isEligible) {
+            return (false, "Not eligible to mint");
+        }
+        
+        if (eligibility.hasMinted) {
+            return (false, "Certificate already minted");
+        }
+        
+        return (true, "You can mint your certificate");
+    }
+    
+    // ANYONE: Verify certificate
+    function verifyCertificate(string memory _studentId) external view returns (
+        bool exists,
+        string memory studentName,
+        string memory courseName,
+        string memory grade,
         string memory ipfsHash,
-        string memory department,
-        string memory batch,
-        uint256 yearOfPassing,
-        bool isRevoked
+        uint256 issueDate,
+        address mintedBy
     ) {
-        require(_exists(tokenId), "Certificate does not exist");
-        Certificate memory cert = certificates[tokenId];
+        Certificate memory cert = certificates[_studentId];
+        
+        return (
+            cert.isMinted,
+            cert.studentName,
+            cert.courseName,
+            cert.grade,
+            cert.ipfsHash,
+            cert.issueDate,
+            cert.mintedBy
+        );
+    }
+    
+    // ADMIN: Revoke student eligibility (before minting)
+    function revokeStudentEligibility(string memory _studentId) external onlyRole(ADMIN_ROLE) {
+        require(studentEligibility[_studentId].isEligible, "Student not eligible");
+        require(!studentEligibility[_studentId].hasMinted, "Certificate already minted");
+        
+        delete studentEligibility[_studentId];
+        emit StudentRevoked(_studentId);
+    }
+    
+    // Get student eligibility status
+    function getStudentEligibility(string memory _studentId) external view returns (
+        bool isEligible,
+        string memory studentName,
+        string memory courseName,
+        string memory grade,
+        bool hasMinted
+    ) {
+        StudentEligibility memory eligibility = studentEligibility[_studentId];
+        
+        return (
+            eligibility.isEligible,
+            eligibility.studentName,
+            eligibility.courseName,
+            eligibility.grade,
+            eligibility.hasMinted
+        );
+    }
+    
+    // Get certificate by student ID
+    function getCertificate(string memory _studentId) external view returns (
+        string memory studentName,
+        string memory courseName,
+        string memory grade,
+        string memory ipfsHash,
+        uint256 issueDate,
+        address mintedBy,
+        bool isMinted
+    ) {
+        Certificate memory cert = certificates[_studentId];
         
         return (
             cert.studentName,
-            cert.registerNumber,
-            cert.course,
-            cert.degree,
-            cert.cgpa,
-            cert.certificateType,
-            cert.issueDate,
+            cert.courseName,
+            cert.grade,
             cert.ipfsHash,
-            cert.department,
-            cert.batch,
-            cert.yearOfPassing,
-            cert.isRevoked
+            cert.issueDate,
+            cert.mintedBy,
+            cert.isMinted
         );
-    }
-
-    // Get certificate by register number
-    function getCertificateByRegisterNumber(string memory registerNumber) public view returns (
-        string memory studentName,
-        string memory registerNumber_,
-        string memory course,
-        string memory degree,
-        string memory cgpa,
-        string memory certificateType,
-        uint256 issueDate,
-        string memory ipfsHash,
-        string memory department,
-        string memory batch,
-        uint256 yearOfPassing,
-        bool isRevoked
-    ) {
-        uint256 tokenId = registerNumberToTokenId[registerNumber];
-        require(tokenId != 0, "Certificate not found for this register number");
-        
-        return getCertificate(tokenId);
-    }
-
-    // Verify certificate validity
-    function verifyCertificate(uint256 tokenId) public view returns (bool) {
-        return _exists(tokenId) && !certificates[tokenId].isRevoked;
-    }
-
-    // Revoke certificate
-    function revokeCertificate(uint256 tokenId) external onlyOwner {
-        require(_exists(tokenId), "Certificate does not exist");
-        certificates[tokenId].isRevoked = true;
-        emit CertificateRevoked(tokenId);
-    }
-
-    // Add college authority
-    function addCollegeAuthority(address authority) external onlyOwner {
-        collegeAuthorities[authority] = true;
-    }
-
-    // Check if certificate exists for register number
-    function certificateExists(string memory registerNumber) public view returns (bool) {
-        return registerNumberToTokenId[registerNumber] != 0;
-    }
-
-    // Get token ID by register number
-    function getTokenIdByRegisterNumber(string memory registerNumber) public view returns (uint256) {
-        return registerNumberToTokenId[registerNumber];
     }
 }
