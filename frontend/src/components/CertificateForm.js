@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-
-// Import from frontend config
 import { contractConfig } from '../config/contractConfig';
 
 const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => {
@@ -19,6 +17,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     yearOfPassing: new Date().getFullYear(),
     ipfsHash: 'Qm' + Math.random().toString(36).substr(2, 44)
   });
+  
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [showStudentDropdown, setShowStudentDropdown] = useState(false);
@@ -26,12 +25,11 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
   const [walletConnected, setWalletConnected] = useState(false);
   const [currentAccount, setCurrentAccount] = useState('');
   const [signer, setSigner] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  // ✅ USE THE IMPORTED CONTRACT CONFIG
   const CONTRACT_ADDRESS = contractConfig.address;
   const CONTRACT_ABI = contractConfig.abi;
 
-  // Certificate types for admin to select
   const certificateTypes = [
     { value: 'Degree', label: 'Degree Certificate' },
     { value: 'Provisional', label: 'Provisional Certificate' },
@@ -45,18 +43,93 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     { value: 'Character', label: 'Character Certificate' }
   ];
 
-  // ✅ ADD COMPREHENSIVE DEBUG LOGS
+  // ✅ FIXED: Comprehensive debug logging
   useEffect(() => {
-    console.log('🔍 [DEBUG] CertificateForm mounted');
-    console.log('📦 [DEBUG] Students prop received:', students);
-    console.log('📊 [DEBUG] Number of students:', students.length);
+    console.log('🔍 [CERTIFICATE_FORM] Component mounted');
+    console.log('📦 [CERTIFICATE_FORM] Students prop:', students);
+    console.log('📊 [CERTIFICATE_FORM] Students count:', students.length);
+    
     if (students.length > 0) {
-      console.log('👤 [DEBUG] First student structure:', students[0]);
-      console.log('🔑 [DEBUG] First student keys:', Object.keys(students[0]));
+      console.log('👤 [CERTIFICATE_FORM] First student:', students[0]);
+      console.log('🔑 [CERTIFICATE_FORM] Student keys:', Object.keys(students[0]));
     }
   }, [students]);
 
-  // Connect to MetaMask (Admin wallet)
+  // ✅ FIXED: Separate search term from form data
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    
+    // Also update the registerNumber in formData for consistency
+    setFormData(prev => ({
+      ...prev,
+      registerNumber: value
+    }));
+
+    console.log('🔎 [SEARCH] Searching for:', value);
+
+    if (value.length > 1) {
+      const filtered = students.filter(student => {
+        const registerMatch = student.registerNumber?.toLowerCase().includes(value.toLowerCase());
+        const nameMatch = student.name?.toLowerCase().includes(value.toLowerCase());
+        const studentIdMatch = student.studentId?.toLowerCase().includes(value.toLowerCase());
+        
+        return registerMatch || nameMatch || studentIdMatch;
+      });
+      
+      console.log('✅ [SEARCH] Found students:', filtered.length);
+      setFilteredStudents(filtered);
+      setShowStudentDropdown(filtered.length > 0);
+    } else {
+      setFilteredStudents([]);
+      setShowStudentDropdown(false);
+    }
+  };
+
+  // ✅ FIXED: Proper student selection with detailed logging
+  const handleStudentSelect = (student) => {
+    console.log('🎯 [SELECT] Student selected:', student);
+    console.log('📋 [SELECT] Full student data:', student);
+
+    // Create new form data with ALL fields properly mapped
+    const newFormData = {
+      name: student.name || '',
+      registerNumber: student.registerNumber || student.studentId || '',
+      email: student.email || '',
+      course: student.course || student.certificates?.[0]?.courseName || 'Not specified',
+      degree: student.degree || 'B.Tech',
+      cgpa: student.cgpa || '0.0',
+      walletAddress: student.walletAddress || '',
+      certificateType: 'Degree',
+      department: student.department || '',
+      batch: student.batch || (student.yearOfPassing ? `${student.yearOfPassing - 4}-${student.yearOfPassing}` : 'Unknown'),
+      yearOfPassing: student.yearOfPassing || new Date().getFullYear(),
+      ipfsHash: `Qm${student.registerNumber || student.studentId}${Date.now()}${Math.random().toString(36).substr(2, 6)}`
+    };
+
+    console.log('🔄 [SELECT] New form data to be set:', newFormData);
+    
+    // Set the form data
+    setFormData(newFormData);
+    setSearchTerm(student.registerNumber || student.studentId || '');
+    setShowStudentDropdown(false);
+    
+    // Force a re-render and log the updated state
+    setTimeout(() => {
+      console.log('✅ [SELECT] Form data after update:', formData);
+    }, 100);
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    console.log(`✏️ [CHANGE] Field ${name}: ${value}`);
+    
+    setFormData({
+      ...formData,
+      [name]: value
+    });
+  };
+
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
@@ -94,7 +167,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     }
   };
 
-  // Auto-connect wallet on component mount
   useEffect(() => {
     const checkWalletConnection = async () => {
       if (window.ethereum) {
@@ -121,81 +193,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     checkWalletConnection();
   }, []);
 
-  // ✅ IMPROVED: Filter students based on register number input
-  useEffect(() => {
-    console.log('🎯 [DEBUG] Search triggered with:', formData.registerNumber);
-    console.log('📚 [DEBUG] Total students available:', students.length);
-    
-    if (formData.registerNumber.length > 1) { // Reduced from 2 to 1 for better UX
-      const filtered = students.filter(student => {
-        const registerMatch = student.registerNumber?.toLowerCase().includes(formData.registerNumber.toLowerCase());
-        const nameMatch = student.name?.toLowerCase().includes(formData.registerNumber.toLowerCase());
-        const studentIdMatch = student.studentId?.toLowerCase().includes(formData.registerNumber.toLowerCase());
-        
-        console.log('🔎 [DEBUG] Student:', student.name, {
-          registerNumber: student.registerNumber,
-          studentId: student.studentId,
-          registerMatch,
-          nameMatch,
-          studentIdMatch
-        });
-        
-        return registerMatch || nameMatch || studentIdMatch;
-      });
-      
-      console.log('✅ [DEBUG] Filtered students found:', filtered.length);
-      console.log('📋 [DEBUG] Filtered students:', filtered);
-      
-      setFilteredStudents(filtered);
-      setShowStudentDropdown(filtered.length > 0);
-    } else {
-      setFilteredStudents([]);
-      setShowStudentDropdown(false);
-    }
-  }, [formData.registerNumber, students]);
-
-  // ✅ IMPROVED: Better student selection with fallbacks
-  const handleStudentSelect = (student) => {
-    console.log('🎯 [DEBUG] Student selected:', student);
-    console.log('📊 [DEBUG] Selected student data:', {
-      name: student.name,
-      registerNumber: student.registerNumber,
-      studentId: student.studentId,
-      email: student.email,
-      course: student.course,
-      department: student.department,
-      cgpa: student.cgpa
-    });
-
-    // Use fallbacks for all fields
-    setFormData({
-      name: student.name || '',
-      registerNumber: student.registerNumber || student.studentId || '',
-      email: student.email || '',
-      course: student.course || student.certificates?.[0]?.courseName || 'Not specified',
-      degree: student.degree || 'B.Tech',
-      cgpa: student.cgpa || student.cgpa || '0.0',
-      walletAddress: student.walletAddress || '',
-      certificateType: 'Degree',
-      department: student.department || student.department || '',
-      batch: student.batch || (student.yearOfPassing ? `${student.yearOfPassing - 4}-${student.yearOfPassing}` : 'Unknown'),
-      yearOfPassing: student.yearOfPassing || new Date().getFullYear(),
-      ipfsHash: `Qm${student.registerNumber || student.studentId}${Date.now()}${Math.random().toString(36).substr(2, 6)}`
-    });
-    
-    setShowStudentDropdown(false);
-    console.log('✅ [DEBUG] Form auto-filled successfully');
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value
-    });
-  };
-
-  // ✅ NEW: Approve student for self-minting
   const approveStudentForMinting = async (signer) => {
     console.log('🎯 Starting approval process...');
 
@@ -210,21 +207,17 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         certificateType: formData.certificateType
       });
 
-      // Generate IPFS hash based on certificate type and student data
       const ipfsHash = `Qm${formData.registerNumber}${formData.certificateType}${Date.now()}`;
 
-      // Call allowStudentToMint function
       const tx = await contract.allowStudentToMint(
-        formData.registerNumber, // studentId
-        formData.name,           // studentName
-        `${formData.course} - ${formData.certificateType}`, // courseName + certificate type
-        `CGPA: ${formData.cgpa} | ${formData.certificateType}`, // grade + certificate type
-        ipfsHash                 // ipfsHash
+        formData.registerNumber,
+        formData.name,
+        `${formData.course} - ${formData.certificateType}`,
+        `CGPA: ${formData.cgpa} | ${formData.certificateType}`,
+        ipfsHash
       );
 
       console.log('⏳ Approval transaction sent:', tx.hash);
-      console.log('🔄 Waiting for confirmation...');
-
       const receipt = await tx.wait();
       console.log('✅ Approval confirmed:', receipt.hash);
 
@@ -241,7 +234,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     }
   };
 
-  // ✅ NEW: Check if student can mint
   const checkStudentEligibility = async (studentId) => {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum, "any");
@@ -268,13 +260,12 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
 
     try {
       console.log('🚀 Starting certificate approval...');
+      console.log('📋 Form data being submitted:', formData);
 
-      // Validate form data
       if (!formData.name || !formData.registerNumber || !formData.course || !formData.degree || !formData.cgpa) {
         throw new Error('Please fill in all required fields');
       }
 
-      // Ensure wallet is connected (Admin wallet)
       let currentSigner = signer;
       if (!currentSigner) {
         console.log('🔗 No signer found, connecting wallet...');
@@ -289,7 +280,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         throw new Error('No signer available for transaction');
       }
 
-      // First, check if student is already approved
       console.log('🔍 Checking current student eligibility...');
       const eligibility = await checkStudentEligibility(formData.registerNumber);
       
@@ -297,7 +287,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         throw new Error('Student is already approved for minting. They can now mint their own certificate.');
       }
 
-      // Approve student for self-minting
       const result = await approveStudentForMinting(currentSigner);
 
       setResult({
@@ -328,8 +317,8 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         yearOfPassing: new Date().getFullYear(),
         ipfsHash: 'Qm' + Math.random().toString(36).substr(2, 44)
       });
+      setSearchTerm('');
 
-      // Callback to parent component
       if (onCertificateApproved) {
         onCertificateApproved(result);
       }
@@ -364,7 +353,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
             Approve students to mint their own certificates
           </p>
 
-          {/* Wallet Connection Status */}
           <div className="mt-2 flex items-center space-x-2">
             <div className={`w-2 h-2 rounded-full ${walletConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
             <span className="text-green-100 text-xs">
@@ -377,30 +365,34 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Debug Info Section */}
+          {/* Debug Info */}
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div>
-                <h4 className="text-sm font-medium text-yellow-800">Debug Info</h4>
+                <h4 className="text-sm font-medium text-yellow-800">Debug Information</h4>
                 <p className="text-sm text-yellow-700">
-                  Students loaded: {students.length} | Filtered: {filteredStudents.length}
+                  Students: {students.length} | Filtered: {filteredStudents.length} | Search: "{searchTerm}"
+                </p>
+                <p className="text-xs text-yellow-600 mt-1">
+                  Form Data - Name: "{formData.name}", Reg: "{formData.registerNumber}"
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => {
-                  console.log('🔍 [MANUAL DEBUG] All students:', students);
-                  console.log('🎯 [MANUAL DEBUG] Form data:', formData);
-                  console.log('🔎 [MANUAL DEBUG] Filtered students:', filteredStudents);
+                  console.log('🔍 [MANUAL_DEBUG] All students:', students);
+                  console.log('📋 [MANUAL_DEBUG] Form data:', formData);
+                  console.log('🎯 [MANUAL_DEBUG] Filtered students:', filteredStudents);
+                  console.log('🔎 [MANUAL_DEBUG] Search term:', searchTerm);
                 }}
                 className="bg-yellow-500 text-white px-3 py-1 rounded text-sm hover:bg-yellow-600"
               >
-                Debug Data
+                Debug Console
               </button>
             </div>
           </div>
 
-          {/* Flow Explanation */}
+          {/* Instructions */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <div className="flex items-start">
               <svg className="w-5 h-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -409,36 +401,39 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
               <div>
                 <h4 className="text-sm font-medium text-blue-800">How to Use</h4>
                 <p className="text-sm text-blue-700 mt-1">
-                  <strong>Step 1:</strong> Type register number to search and select student (auto-fills all fields)<br/>
-                  <strong>Step 2:</strong> Select certificate type from dropdown<br/>
-                  <strong>Step 3:</strong> Approve student for minting
+                  <strong>Step 1:</strong> Type register number or name to search students<br/>
+                  <strong>Step 2:</strong> Click on student from dropdown (auto-fills ALL fields)<br/>
+                  <strong>Step 3:</strong> Select certificate type and approve
                 </p>
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Register Number with Auto-complete */}
-            <div className="relative">
+            {/* Register Number with Auto-complete - FIXED */}
+            <div className="relative md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Register Number *
+                Search Student by Register Number or Name *
               </label>
               <input
                 type="text"
-                name="registerNumber"
-                value={formData.registerNumber}
-                onChange={handleChange}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Type to search students..."
+                value={searchTerm}
+                onChange={handleSearchChange}
+                className="w-full px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                placeholder="Start typing register number (21AI001) or name (Sibi)..."
               />
-
-              {/* Student Dropdown */}
+              
+              {/* Student Dropdown - FIXED */}
               {showStudentDropdown && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-2 bg-white border border-gray-300 rounded-md shadow-xl max-h-80 overflow-y-auto">
                   {filteredStudents.length === 0 ? (
-                    <div className="px-4 py-3 text-sm text-gray-500 text-center">
-                      No students found matching "{formData.registerNumber}"
+                    <div className="px-4 py-4 text-sm text-gray-500 text-center">
+                      <div className="flex items-center justify-center">
+                        <svg className="w-5 h-5 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                        No students found matching "{searchTerm}"
+                      </div>
                     </div>
                   ) : (
                     filteredStudents.map((student) => (
@@ -446,28 +441,33 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                         key={student._id || student.registerNumber}
                         type="button"
                         onClick={() => handleStudentSelect(student)}
-                        className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                        className="w-full text-left px-4 py-4 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-all duration-200 hover:shadow-md"
                       >
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
-                            <div className="font-medium text-gray-900 text-base">{student.name}</div>
-                            <div className="text-sm text-gray-600 mt-1">
-                              <span className="font-semibold">Reg No:</span> {student.registerNumber || student.studentId} • 
-                              <span className="font-semibold ml-2">Course:</span> {student.course} • 
-                              <span className="font-semibold ml-2">CGPA:</span> {student.cgpa}
+                            <div className="flex items-center">
+                              <div className="font-bold text-gray-900 text-lg">{student.name}</div>
+                              <span className="ml-3 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                                {student.eligibilityStatus || 'eligible'}
+                              </span>
                             </div>
-                            <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-2">
-                              <span>{student.department}</span>
-                              <span>•</span>
-                              <span>{student.batch}</span>
-                              <span>•</span>
-                              <span>{student.email}</span>
+                            <div className="text-sm text-gray-600 mt-2 space-y-1">
+                              <div><span className="font-semibold">Register No:</span> {student.registerNumber || student.studentId}</div>
+                              <div><span className="font-semibold">Course:</span> {student.course}</div>
+                              <div><span className="font-semibold">CGPA:</span> {student.cgpa} | <span className="font-semibold">Dept:</span> {student.department}</div>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-2 flex flex-wrap gap-3">
+                              <span>📧 {student.email}</span>
+                              <span>📱 {student.phone}</span>
+                              <span>🎓 {student.batch}</span>
                             </div>
                           </div>
-                          <div className="flex-shrink-0 ml-2">
-                            <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
+                          <div className="flex-shrink-0 ml-4">
+                            <div className="bg-blue-100 text-blue-800 p-2 rounded-lg">
+                              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
                           </div>
                         </div>
                       </button>
@@ -475,10 +475,13 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                   )}
                 </div>
               )}
+              <p className="text-xs text-gray-500 mt-2">
+                💡 Start typing to search students. Click on a student to auto-fill all fields.
+              </p>
             </div>
 
-            {/* Certificate Type Selection */}
-            <div>
+            {/* Certificate Type */}
+            <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Certificate Type *
               </label>
@@ -497,6 +500,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
               </select>
             </div>
 
+            {/* Auto-filled fields - These should populate when student is selected */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Student Name *
@@ -507,7 +511,23 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 value={formData.name}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                placeholder="Will auto-fill when student is selected"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Register Number *
+              </label>
+              <input
+                type="text"
+                name="registerNumber"
+                value={formData.registerNumber}
+                onChange={handleChange}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                readOnly
               />
             </div>
 
@@ -521,7 +541,8 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 value={formData.email}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                placeholder="Will auto-fill when student is selected"
               />
             </div>
 
@@ -535,7 +556,8 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 value={formData.course}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                placeholder="Will auto-fill when student is selected"
               />
             </div>
 
@@ -549,7 +571,8 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 value={formData.degree}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                placeholder="Will auto-fill when student is selected"
               />
             </div>
 
@@ -563,7 +586,8 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 value={formData.cgpa}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                placeholder="Will auto-fill when student is selected"
               />
             </div>
 
@@ -577,7 +601,8 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 value={formData.department}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                placeholder="Will auto-fill when student is selected"
               />
             </div>
 
@@ -591,8 +616,8 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 value={formData.batch}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="e.g., 2021-2025"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                placeholder="Will auto-fill when student is selected"
               />
             </div>
 
@@ -606,13 +631,11 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 value={formData.yearOfPassing}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                min="2000"
-                max="2030"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
               />
             </div>
 
-            <div>
+            <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Wallet Address
               </label>
@@ -621,8 +644,8 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 name="walletAddress"
                 value={formData.walletAddress}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="0x... (optional - will use connected wallet)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                placeholder="Will auto-fill when student is selected"
               />
               <p className="text-xs text-gray-500 mt-1">
                 Student's wallet address for receiving the certificate
@@ -639,36 +662,36 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 value={formData.ipfsHash}
                 onChange={handleChange}
                 readOnly
-                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-600 font-mono text-sm"
                 placeholder="Qm..."
               />
               <p className="text-xs text-gray-500 mt-1">
-                Unique identifier for certificate metadata (auto-generated)
+                Unique identifier for certificate metadata (auto-generated when student is selected)
               </p>
             </div>
           </div>
 
-          <div className="flex justify-end pt-4 space-x-4">
+          <div className="flex justify-end pt-6 space-x-4 border-t border-gray-200">
             <button
               type="button"
               onClick={connectWallet}
-              className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 font-medium transition-colors duration-200"
+              className="bg-gray-600 text-white px-6 py-3 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 font-medium transition-colors duration-200"
             >
-              {walletConnected ? 'Reconnect Admin Wallet' : 'Connect Admin Wallet'}
+              {walletConnected ? '🔄 Reconnect Wallet' : '🔗 Connect Wallet'}
             </button>
 
             <button
               type="submit"
               disabled={loading || !walletConnected}
-              className="bg-green-600 text-white px-6 py-3 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors duration-200"
+              className="bg-green-600 text-white px-8 py-3 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors duration-200 flex items-center"
             >
               {loading ? (
-                <div className="flex items-center">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
                   Approving Student...
-                </div>
+                </>
               ) : (
-                `Approve for ${formData.certificateType}`
+                `✅ Approve for ${formData.certificateType}`
               )}
             </button>
           </div>

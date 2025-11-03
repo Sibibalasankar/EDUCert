@@ -3,93 +3,88 @@ import { useWeb3 } from '../context/Web3Context';
 import CertificateForm from '../components/CertificateForm';
 import CertificateList from '../components/CertificateList';
 import StudentManagement from '../components/StudentManagement';
+import { studentAPI } from '../services/api'; // Add this import
 
 const AdminDashboard = () => {
   const { isConnected, connectWallet, account } = useWeb3();
   const [activeTab, setActiveTab] = useState('students');
   const [recentCertificate, setRecentCertificate] = useState(null);
   const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Updated mock students data with proper structure
-  useEffect(() => {
-    const mockStudents = [
-      {
-        _id: '1',
-        name: 'Sibi B S',
-        registerNumber: '21AI001',
-        studentId: '21AI001',
-        email: 'sibi@college.edu',
-        course: 'Artificial Intelligence & Data Science',
-        degree: 'B.Tech',
-        cgpa: '8.9',
-        walletAddress: '0x6e7bd4a9c0b4695dd21bd7557a6c55ae4676cb1c',
-        phone: '+91 9876543210',
-        department: 'AI & DS',
-        program: 'ai-ds',
-        yearOfAdmission: 2021,
-        yearOfPassing: 2025,
-        currentSemester: 8,
-        batch: '2021-2025',
-        eligibilityStatus: 'eligible',
-        certificates: [],
-        createdAt: new Date().toISOString()
-      },
-      {
-        _id: '2',
-        name: 'John Doe',
-        registerNumber: '21CS002',
-        studentId: '21CS002',
-        email: 'john@college.edu',
-        course: 'Computer Science',
-        degree: 'B.Tech',
-        cgpa: '9.2',
-        walletAddress: '0x892d35Cc6634C0532925a3b8E123456789',
-        phone: '+91 9876543211',
-        department: 'CSE',
-        program: 'cse',
-        yearOfAdmission: 2021,
-        yearOfPassing: 2025,
-        currentSemester: 8,
-        batch: '2021-2025',
-        eligibilityStatus: 'eligible',
-        certificates: [],
-        createdAt: new Date().toISOString()
-      },
-      {
-        _id: '3',
-        name: 'Alice Smith',
-        registerNumber: '21EC003',
-        studentId: '21EC003',
-        email: 'alice@college.edu',
-        course: 'Electronics and Communication',
-        degree: 'B.Tech',
-        cgpa: '8.5',
-        walletAddress: '0xabc123def456ghi789jkl012mno345pqr678',
-        phone: '+91 9876543212',
-        department: 'ECE',
-        program: 'ece',
-        yearOfAdmission: 2021,
-        yearOfPassing: 2025,
-        currentSemester: 8,
-        batch: '2021-2025',
-        eligibilityStatus: 'eligible',
-        certificates: [],
-        createdAt: new Date().toISOString()
+  // ✅ FIXED: Fetch REAL students from backend instead of mock data
+  const fetchStudents = async () => {
+    try {
+      setLoading(true);
+      console.log('📡 AdminDashboard: Fetching real students from backend...');
+
+      const response = await studentAPI.getAllStudents();
+
+      if (response.data.success) {
+        // ✅ Use the SAME data transformation as StudentManagement
+        const backendStudents = response.data.students
+          .filter(student => student && student.studentId)
+          .map(student => {
+            const yearOfPassing = student.yearOfPassing || new Date().getFullYear() + 4;
+            const yearOfAdmission = yearOfPassing - 4;
+            const batch = `${yearOfAdmission}-${yearOfPassing}`;
+            
+            const course = student.certificates?.[0]?.courseName || 
+                          `${student.degree || 'B.Tech'} in ${student.department || 'Unknown Department'}`;
+            
+            return {
+              _id: student._id,
+              name: student.name || 'Unknown',
+              registerNumber: student.studentId,
+              email: student.email || 'No email',
+              course: course,
+              degree: student.degree || 'B.Tech',
+              cgpa: student.cgpa || '0.0',
+              walletAddress: student.walletAddress || 'Not set',
+              phone: student.phone || 'Not provided',
+              department: student.department || 'Unknown',
+              program: student.department?.toLowerCase()?.replace(/[&\s]/g, '_') || 'unknown',
+              yearOfAdmission: yearOfAdmission,
+              yearOfPassing: yearOfPassing,
+              currentSemester: student.currentSemester || 1,
+              batch: batch,
+              createdAt: student.createdAt || new Date().toISOString(),
+              eligibilityStatus: student.eligibilityStatus || 'pending',
+              certificates: student.certificates || []
+            };
+          });
+
+        setStudents(backendStudents);
+        console.log(`✅ AdminDashboard: Loaded ${backendStudents.length} REAL students`);
+        
+        // Debug log to verify data
+        if (backendStudents.length > 0) {
+          console.log('👤 Sample real student data:', backendStudents[0]);
+        }
       }
-    ];
-    setStudents(mockStudents);
-    console.log('📦 AdminDashboard: Mock students loaded', mockStudents);
+    } catch (error) {
+      console.error('❌ AdminDashboard: Error fetching students:', error);
+      // Keep empty array if fetch fails
+      setStudents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStudents();
   }, []);
 
   const handleCertificateIssue = (certificateData) => {
+    console.log('🎉 Certificate issued:', certificateData);
     setRecentCertificate(certificateData);
     setActiveTab('certificates');
   };
 
-  // Add this function to handle certificate approval
   const handleCertificateApproved = (result) => {
     console.log('✅ AdminDashboard: Certificate approved:', result);
-    // You can refresh students data here if needed
+    // Refresh students after approval
+    fetchStudents();
   };
 
   if (!isConnected) {
@@ -114,6 +109,17 @@ const AdminDashboard = () => {
     );
   }
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading students data from database...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -124,6 +130,9 @@ const AdminDashboard = () => {
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
                 <p className="text-gray-600 mt-1">Manage students and issue academic certificates</p>
+                <p className="text-sm text-green-600 mt-1">
+                  ✅ Loaded {students.length} students from database
+                </p>
               </div>
               <div className="mt-4 sm:mt-0">
                 <div className="flex items-center space-x-2 text-sm text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">

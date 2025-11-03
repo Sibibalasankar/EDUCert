@@ -40,51 +40,68 @@ const StudentManagement = () => {
 
   // Fetch students from REAL backend
   // ✅ FIXED: Fetch students from REAL backend (with useCallback)
-  const fetchStudents = useCallback(async () => {
-    try {
-      setLoading(true);
-      console.log('📡 Fetching students from backend...');
+  // ✅ FIXED: Better data transformation with proper fallbacks
+const fetchStudents = useCallback(async () => {
+  try {
+    setLoading(true);
+    console.log('📡 Fetching students from backend...');
 
-      const response = await studentAPI.getAllStudents();
+    const response = await studentAPI.getAllStudents();
 
-      if (response.data.success) {
-        // ✅ FIXED: Safe data transformation with null checks
-        const backendStudents = response.data.students
-          .filter(student => student && student.studentId) // Filter out invalid students
-          .map(student => ({
-            _id: student._id || `temp-${Date.now()}`,
+    if (response.data.success) {
+      // ✅ IMPROVED: Better data transformation with realistic fallbacks
+      const backendStudents = response.data.students
+        .filter(student => student && student.studentId)
+        .map(student => {
+          // Calculate batch based on year of passing
+          const yearOfPassing = student.yearOfPassing || new Date().getFullYear() + 4;
+          const yearOfAdmission = yearOfPassing - 4;
+          const batch = `${yearOfAdmission}-${yearOfPassing}`;
+          
+          // Get course name from department if not available
+          const course = student.certificates?.[0]?.courseName || 
+                        `${student.degree || 'B.Tech'} in ${student.department || 'Unknown Department'}`;
+          
+          return {
+            _id: student._id,
             name: student.name || 'Unknown',
             registerNumber: student.studentId,
             email: student.email || 'No email',
-            course: student.certificates?.[0]?.courseName || 'Not specified',
-            degree: student.degree || 'B.Tech',
-            cgpa: student.cgpa || '0.0',
-            walletAddress: student.walletAddress || '',
-            phone: student.phone || '',
+            course: course,
+            degree: student.degree || 'B.Tech', // Default to B.Tech
+            cgpa: student.cgpa || '0.0', // Default CGPA
+            walletAddress: student.walletAddress || 'Not set',
+            phone: student.phone || 'Not provided',
             department: student.department || 'Unknown',
-            program: student.department?.toLowerCase() || 'unknown',
-            yearOfAdmission: student.yearOfPassing ? student.yearOfPassing - 4 : new Date().getFullYear(),
-            yearOfPassing: student.yearOfPassing || new Date().getFullYear() + 4,
+            program: student.department?.toLowerCase()?.replace(/[&\s]/g, '_') || 'unknown',
+            yearOfAdmission: yearOfAdmission,
+            yearOfPassing: yearOfPassing,
             currentSemester: student.currentSemester || 1,
-            batch: student.yearOfPassing ? `${student.yearOfPassing - 4}-${student.yearOfPassing}` : 'Unknown',
+            batch: batch,
             createdAt: student.createdAt || new Date().toISOString(),
             eligibilityStatus: student.eligibilityStatus || 'pending',
             certificates: student.certificates || []
-          }));
+          };
+        });
 
-        setStudents(backendStudents);
-        console.log(`✅ Loaded ${backendStudents.length} students from backend`);
+      setStudents(backendStudents);
+      console.log(`✅ Loaded ${backendStudents.length} students from backend`);
+      
+      // Debug: Log first student to verify transformation
+      if (backendStudents.length > 0) {
+        console.log('👤 First transformed student:', backendStudents[0]);
       }
-    } catch (error) {
-      console.error('❌ Error fetching students from backend:', error);
-      // Fallback to mock data if backend fails
-      console.log('🔄 Using mock data as fallback...');
-      const mockStudents = getMockStudents();
-      setStudents(mockStudents);
-    } finally {
-      setLoading(false);
     }
-  }, []);
+  } catch (error) {
+    console.error('❌ Error fetching students from backend:', error);
+    // Fallback to mock data if backend fails
+    console.log('🔄 Using mock data as fallback...');
+    const mockStudents = getMockStudents();
+    setStudents(mockStudents);
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   // ✅ FIXED: useEffect with proper dependencies
   useEffect(() => {
@@ -135,75 +152,62 @@ const StudentManagement = () => {
     ];
   };
 
-  // Save student to REAL backend
-  const saveStudentToBackend = async (studentData) => {
-    try {
-      console.log('💾 Saving student to backend:', studentData);
+// ✅ UPDATE THIS in StudentManagement.js
+const saveStudentToBackend = async (studentData) => {
+  try {
+    console.log('💾 Saving student to backend:', studentData);
 
-      // Transform frontend data to backend format - include ALL fields
-      const backendStudentData = {
-        studentId: studentData.registerNumber,
-        name: studentData.name,
-        email: studentData.email,
-        department: studentData.department,
-        yearOfPassing: studentData.yearOfPassing,
-        walletAddress: studentData.walletAddress || '', // Ensure not null
-        phone: studentData.phone || '', // Ensure not null
-        cgpa: studentData.cgpa || '', // Ensure not null
-        degree: studentData.degree || '', // Ensure not null
-        // Add any other fields that are missing
-        currentSemester: studentData.currentSemester || 1
-      };
+    // Transform frontend data to backend format
+    const backendStudentData = {
+      studentId: studentData.registerNumber,
+      name: studentData.name,
+      email: studentData.email,
+      department: studentData.department,
+      yearOfPassing: studentData.yearOfPassing,
+      walletAddress: studentData.walletAddress || '',
+      phone: studentData.phone || '',
+      cgpa: studentData.cgpa || '',
+      degree: studentData.degree || '',
+      currentSemester: studentData.currentSemester || 1
+    };
 
-      console.log('📤 Sending to backend:', backendStudentData);
+    console.log('📤 Sending to backend:', backendStudentData);
 
-      const response = await studentAPI.registerStudent(backendStudentData);
-
-      console.log('📥 Backend response:', response.data);
-
-      if (response.data && response.data.success) {
-        console.log('✅ Student saved to backend successfully');
-
-        // Use the actual student data returned from backend
-        const savedStudent = response.data.student;
-
-        return {
-          success: true,
-          data: {
-            _id: savedStudent._id,
-            name: savedStudent.name,
-            registerNumber: savedStudent.studentId,
-            email: savedStudent.email,
-            course: studentData.course,
-            degree: studentData.degree,
-            cgpa: studentData.cgpa,
-            walletAddress: studentData.walletAddress,
-            phone: studentData.phone,
-            department: studentData.department,
-            program: studentData.program,
-            yearOfAdmission: studentData.yearOfAdmission,
-            yearOfPassing: studentData.yearOfPassing,
-            currentSemester: studentData.currentSemester,
-            batch: studentData.batch,
-            createdAt: savedStudent.createdAt,
-            eligibilityStatus: savedStudent.eligibilityStatus || 'pending'
-          }
-        };
-      } else {
-        console.error('❌ Backend response indicates failure');
-        throw new Error(response.data?.error || 'Failed to save student');
-      }
-    } catch (error) {
-      console.error('❌ Error saving student to backend:', error);
-
-      if (error.response) {
-        console.error('Response error:', error.response.data);
-        console.error('Response status:', error.response.status);
-      }
-
-      throw error;
+    let response;
+    
+    if (editingStudent) {
+      // ✅ UPDATE existing student using studentId (registerNumber)
+      response = await studentAPI.updateStudent(editingStudent.registerNumber, backendStudentData);
+      console.log('🔄 Updating existing student:', editingStudent.registerNumber);
+    } else {
+      // CREATE new student
+      response = await studentAPI.registerStudent(backendStudentData);
+      console.log('🆕 Creating new student');
     }
-  };
+
+    console.log('📥 Backend response:', response.data);
+
+    if (response.data && response.data.success) {
+      console.log('✅ Student saved to backend successfully');
+      return {
+        success: true,
+        data: response.data.student
+      };
+    } else {
+      console.error('❌ Backend response indicates failure');
+      throw new Error(response.data?.error || 'Failed to save student');
+    }
+  } catch (error) {
+    console.error('❌ Error saving student to backend:', error);
+    
+    if (error.response) {
+      console.error('Response error:', error.response.data);
+      console.error('Response status:', error.response.status);
+    }
+    
+    throw error;
+  }
+};
   // Delete student from REAL backend
   const deleteStudentFromBackend = async (studentId) => {
     try {

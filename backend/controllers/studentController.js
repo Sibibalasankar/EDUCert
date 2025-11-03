@@ -153,3 +153,52 @@ export const revokeApproval = async (req, res) => {
     });
   }
 };
+
+// ✅ ADD THIS FUNCTION to studentController.js
+export const updateStudent = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const updateData = req.body;
+
+    console.log('🔄 Updating student:', studentId, updateData);
+
+    // Find student by studentId (not MongoDB _id)
+    const updatedStudent = await Student.findOneAndUpdate(
+      { studentId: studentId },
+      { $set: updateData },
+      { 
+        new: true, // Return updated document
+        runValidators: true // Run schema validations
+      }
+    );
+
+    if (!updatedStudent) {
+      return res.status(404).json({
+        success: false,
+        error: 'Student not found'
+      });
+    }
+
+    console.log('✅ Student updated successfully:', {
+      name: updatedStudent.name,
+      studentId: updatedStudent.studentId,
+      cgpa: updatedStudent.cgpa,
+      phone: updatedStudent.phone,
+      walletAddress: updatedStudent.walletAddress,
+      degree: updatedStudent.degree
+    });
+
+    res.json({
+      success: true,
+      message: 'Student updated successfully',
+      student: updatedStudent
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating student:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};

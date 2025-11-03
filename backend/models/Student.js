@@ -3,45 +3,60 @@ import mongoose from 'mongoose';
 const studentSchema = new mongoose.Schema({
   studentId: {
     type: String,
-    required: true,
-    unique: true
+    required: [true, 'Student ID is required'],
+    unique: true,
+    trim: true,
+    uppercase: true
   },
   name: {
     type: String,
-    required: true
+    required: [true, 'Student name is required'],
+    trim: true
   },
   email: {
     type: String,
-    required: true,
-    unique: true
+    required: [true, 'Email is required'],
+    unique: true,
+    trim: true,
+    lowercase: true,
+    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
   },
   department: {
     type: String,
-    required: true
+    required: [true, 'Department is required'],
+    trim: true
   },
   yearOfPassing: {
     type: Number,
-    required: true
+    required: [true, 'Year of passing is required'],
+    min: [2000, 'Year must be after 2000'],
+    max: [2030, 'Year must be before 2030']
   },
   walletAddress: {
     type: String,
-    default: '' // Change from null to empty string
+    default: '',
+    trim: true
   },
   phone: {
     type: String,
-    default: '' // Add this field with default
+    default: '',
+    trim: true
   },
   cgpa: {
     type: String,
-    default: '' // Add this field with default
+    default: '',
+    trim: true
   },
   degree: {
     type: String,
-    default: '' // Add this field with default
+    default: '',
+    trim: true
   },
   currentSemester: {
     type: Number,
-    default: 1 // Add this field with default
+    default: 1,
+    min: [1, 'Semester must be at least 1'],
+    max: [8, 'Semester cannot exceed 8']
   },
   eligibilityStatus: {
     type: String,
@@ -49,12 +64,30 @@ const studentSchema = new mongoose.Schema({
     default: 'pending'
   },
   certificates: [{
-    certificateId: String,
-    ipfsHash: String,
-    courseName: String,
-    grade: String,
-    issueDate: Date,
-    transactionHash: String,
+    certificateId: {
+      type: String,
+      trim: true
+    },
+    ipfsHash: {
+      type: String,
+      trim: true
+    },
+    courseName: {
+      type: String,
+      trim: true
+    },
+    grade: {
+      type: String,
+      trim: true
+    },
+    issueDate: {
+      type: Date,
+      default: Date.now
+    },
+    transactionHash: {
+      type: String,
+      trim: true
+    },
     status: {
       type: String,
       enum: ['minted', 'pending'],
@@ -63,7 +96,8 @@ const studentSchema = new mongoose.Schema({
   }],
   approvedBy: {
     type: String,
-    default: null
+    default: null,
+    trim: true
   },
   approvedAt: {
     type: Date,
@@ -74,5 +108,11 @@ const studentSchema = new mongoose.Schema({
     default: Date.now
   }
 });
+
+// Add index for better performance
+studentSchema.index({ studentId: 1 });
+studentSchema.index({ email: 1 });
+studentSchema.index({ department: 1 });
+studentSchema.index({ eligibilityStatus: 1 });
 
 export default mongoose.model('Student', studentSchema);

@@ -4,7 +4,8 @@ import {
   approveStudent,
   getStudentStatus,
   getAllStudents,
-  revokeApproval
+  revokeApproval,
+  updateStudent // ✅ ADD THIS IMPORT
 } from '../controllers/studentController.js';
 
 import {
@@ -15,11 +16,15 @@ import {
 
 const router = express.Router();
 
+// Student routes
 router.post('/register', registerStudent);
 router.get('/all', getAllStudents);
 router.get('/:studentId', getStudentStatus);
+router.put('/:studentId', updateStudent); // ✅ ADD THIS ROUTE
 router.post('/:studentId/approve', approveStudent);
 router.post('/:studentId/revoke', revokeApproval);
+
+// Certificate routes  
 router.post('/:studentId/mint', mintCertificate);
 router.get('/:studentId/verify', verifyCertificate);
 router.get('/:studentId/certificate-status', getCertificateStatus);
