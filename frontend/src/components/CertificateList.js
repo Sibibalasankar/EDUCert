@@ -69,20 +69,20 @@ const CertificateList = () => {
     }
   };
 
-  // In transformCertificateData function, add proper transaction hash
+  // Transform certificate data from backend to frontend format
   const transformCertificateData = (backendCertificates) => {
     return backendCertificates.map(cert => ({
-      _id: cert.tokenId.toString(),
+      _id: cert._id || cert.tokenId.toString(),
       tokenId: cert.tokenId,
       studentName: cert.studentName,
       registerNumber: cert.registerNumber,
-      email: `${cert.registerNumber.toLowerCase()}@college.edu`,
+      email: cert.email || `${cert.registerNumber.toLowerCase()}@college.edu`,
       course: cert.course,
       degree: cert.degree,
       cgpa: cert.cgpa,
       certificateType: cert.certificateType,
       issueDate: cert.issueDate,
-      transactionHash: cert.transactionHash || `0x${Math.random().toString(16).substr(2, 40)}`, // Better placeholder
+      transactionHash: cert.transactionHash,
       ipfsHash: cert.ipfsHash,
       status: cert.isRevoked ? 'Revoked' : 'Active',
       department: cert.department,

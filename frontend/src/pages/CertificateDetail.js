@@ -9,31 +9,36 @@ const CertificateDetail = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Mock data fetch - will connect to backend in Phase 2
-    setTimeout(() => {
-      const mockCertificate = {
-        _id: '1',
-        tokenId: parseInt(tokenId),
-        studentName: 'Sibi B S',
-        registerNumber: '21AI001',
-        email: 'sibi@college.edu',
-        course: 'Artificial Intelligence & Data Science',
-        degree: 'B.Tech',
-        cgpa: '8.9',
-        certificateType: 'Degree Certificate',
-        issueDate: new Date().toISOString(),
-        transactionHash: '0x4af1234567890abcdef1234567890abcdef1234567890abcdef1234567891d3',
-        ipfsHash: 'QmRjD1234567890K7xF',
-        department: 'AI & DS',
-        yearOfAdmission: 2021,
-        yearOfPassing: 2025,
-        institution: 'Your College Name',
-        issuer: 'College Administration',
-        status: 'Active'
-      };
-      setCertificate(mockCertificate);
-      setLoading(false);
-    }, 1000);
+    const fetchCertificate = async () => {
+      try {
+        const response = await fetch(`/api/certificates/${tokenId}`);
+        const data = await response.json();
+        
+        if (data.success && data.certificate) {
+          // Add default values for any missing fields
+          const certificateData = {
+            ...data.certificate,
+            institution: data.certificate.institution || 'Your College Name',
+            issuer: data.certificate.issuer || 'College Administration',
+            status: data.certificate.isRevoked ? 'Revoked' : 'Active',
+            yearOfAdmission: data.certificate.yearOfAdmission || 
+              (data.certificate.batch ? parseInt(data.certificate.batch.split('-')[0]) : null)
+          };
+          
+          setCertificate(certificateData);
+        } else {
+          console.error('Failed to fetch certificate:', data.error);
+          setCertificate(null);
+        }
+      } catch (error) {
+        console.error('Error fetching certificate:', error);
+        setCertificate(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCertificate();
   }, [tokenId]);
 
   if (loading) {

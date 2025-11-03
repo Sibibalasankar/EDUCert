@@ -8,8 +8,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
-
+const CONTRACT_ADDRESS = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
+      { "internalType": "string", "name": "degree", "type": "string" },
 // Load the REAL ABI from your compiled contract
 const CONTRACT_ABI = [
   // Use the exact ABI from your EDUCertNFT.json file
@@ -63,31 +63,19 @@ const CONTRACT_ABI = [
     "type": "function"
   }
 ];
-
 // Initialize provider and contract
 let provider;
 let contract;
 
-try {
   console.log('🔗 Connecting to blockchain...');
   provider = new ethers.JsonRpcProvider('http://localhost:8545');
   contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
   console.log('✅ Blockchain provider initialized');
 } catch (error) {
-  console.error('❌ Failed to initialize blockchain connection:', error);
-  process.exit(1);
-}
-
-// Health check
-app.get('/api/health', async (req, res) => {
-  try {
-    const blockNumber = await provider.getBlockNumber();
-    const code = await provider.getCode(CONTRACT_ADDRESS);
+  console.log('✅ Blockchain provider initialized');
     
     res.json({ 
-      status: 'Backend is running', 
-      timestamp: new Date().toISOString(),
-      blockchain: {
+  process.exit(1);
         network: 'localhost:8545',
         blockNumber: blockNumber,
         status: 'connected'
@@ -123,22 +111,169 @@ app.get('/api/contract', async (req, res) => {
   }
 });
 
-// Certificates endpoint with PROPER ABI
-app.get('/api/certificates', async (req, res) => {
+// Add these endpoints AFTER your existing /api/certificates endpoint
+
+// Get certificate by token ID
+app.get('/api/certificates/:tokenId', async (req, res) => {
   try {
-    console.log('📋 Fetching certificates with REAL ABI...');
+    const tokenId = parseInt(req.params.tokenId);
     
+    if (isNaN(tokenId) || tokenId <= 0) {
+      return res.status(400).json({ error: 'Invalid token ID' });
+    }
+
+    console.log(`🔍 Fetching certificate by token ID: ${tokenId}`);
+    
+    // Check if token exists
     const totalCertificates = await contract.getTotalCertificates();
-    console.log(`📊 Total certificates: ${totalCertificates}`);
+    if (tokenId > totalCertificates) {
+      return res.status(404).json({ error: 'Certificate not found' });
+    }
+
+    // Get certificate data from blockchain
+    const certData = await contract.getCertificate(tokenId);
     
+    const certificate = {
+      tokenId: tokenId,
+      studentName: certData.studentName,
+      registerNumber: certData.registerNumber,
+      course: certData.course,
+      degree: certData.degree,
+      cgpa: certData.cgpa,
+      certificateType: certData.certificateType,
+      issueDate: new Date(Number(certData.issueDate) * 1000).toISOString(),
+      ipfsHash: certData.ipfsHash,
+      department: certData.department,
+      batch: certData.batch,
+      yearOfPassing: Number(certData.yearOfPassing),
+      isRevoked: certData.isRevoked,
+      status: certData.isRevoked ? 'Revoked' : 'Active'
+    };
+
+    console.log(`✅ Found certificate: ${certificate.studentName}`);
+    res.json(certificate);
+
+  } catch (error) {
+    console.error(`❌ Error fetching certificate ${req.params.tokenId}:`, error);
+    
+    // Fallback: search in all certificates
+    try {
+      const allCertificates = await getAllCertificates();
+      const certificate = allCertificates.find(cert => cert.tokenId == req.params.tokenId);
+      
+      if (certificate) {
+        console.log(`✅ Found in fallback: ${certificate.studentName}`);
+        return res.json(certificate);
+      }
+    } catch (fallbackError) {
+      console.error('Fallback also failed:', fallbackError);
+    }
+    
+    res.status(404).json({ error: 'Certificate not found' });
+  }
+});
+
+// Get certificate by register number
+app.get('/api/certificates/register/:registerNumber', async (req, res) => {
+  try {
+    const registerNumber = req.params.registerNumber.toUpperCase();
+    console.log(`🔍 Searching for register number: ${registerNumber}`);
+    
+    // Get all certificates and filter by register number
+    const allCertificates = await getAllCertificates();
+    const certificate = allCertificates.find(cert => 
+      cert.registerNumber.toUpperCase() === registerNumber
+    );
+    
+    if (certificate) {
+      console.log(`✅ Found certificate: ${certificate.studentName}`);
+      res.json(certificate);
+    } else {
+      console.log(`❌ No certificate found for register number: ${registerNumber}`);
+      res.status(404).json({ error: 'Certificate not found for this register number' });
+    }
+
+  } catch (error) {
+    console.error(`❌ Error searching by register number:`, error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get certificate by transaction hash (placeholder - you'll need to implement this based on your events)
+app.get('/api/certificates/transaction/:transactionHash', async (req, res) => {
+  try {
+    const transactionHash = req.params.transactionHash;
+    console.log(`🔍 Searching for transaction: ${transactionHash}`);
+    
+    // For now, return a mock response since we don't have transaction mapping
+    // You'll need to implement this by storing transaction->token mapping in your contract events
+    
+    res.status(501).json({ 
+      error: 'Transaction search not yet implemented',
+      message: 'Please use Token ID or Register Number for verification'
+    });
+
+  } catch (error) {
+    console.error(`❌ Error searching by transaction:`, error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Verify certificate endpoint
+app.get('/api/certificates/verify/:tokenId', async (req, res) => {
+  try {
+    const tokenId = parseInt(req.params.tokenId);
+    
+    if (isNaN(tokenId) || tokenId <= 0) {
+      return res.status(400).json({ valid: false, error: 'Invalid token ID' });
+    }
+
+    console.log(`🔐 Verifying certificate: ${tokenId}`);
+    
+    // Check if token exists and is not revoked
+    const totalCertificates = await contract.getTotalCertificates();
+    
+    if (tokenId > totalCertificates) {
+      return res.json({ valid: false, error: 'Certificate does not exist' });
+    }
+
+    const certData = await contract.getCertificate(tokenId);
+    
+    if (certData.isRevoked) {
+      return res.json({ valid: false, error: 'Certificate has been revoked' });
+    }
+
+    // Additional verification checks can be added here
+    const issueDate = new Date(Number(certData.issueDate) * 1000);
+    const now = new Date();
+    
+    if (issueDate > now) {
+      return res.json({ valid: false, error: 'Certificate issue date is invalid' });
+    }
+
+    res.json({ 
+      valid: true,
+      tokenId: tokenId,
+      studentName: certData.studentName,
+      registerNumber: certData.registerNumber,
+      message: 'Certificate is valid and authentic'
+    });
+
+  } catch (error) {
+    console.error(`❌ Verification error for token ${req.params.tokenId}:`, error);
+    res.json({ valid: false, error: 'Verification failed' });
+  }
+});
+
+// Helper function to get all certificates
+async function getAllCertificates() {
+  try {
+    const totalCertificates = await contract.getTotalCertificates();
     const certificates = [];
     
     for (let i = 1; i <= totalCertificates; i++) {
       try {
-        console.log(`🔍 Fetching certificate ${i}...`);
         const certData = await contract.getCertificate(i);
-        
-        console.log(`✅ Certificate ${i} raw data:`, certData);
         
         const certificate = {
           tokenId: i,
@@ -152,6 +287,43 @@ app.get('/api/certificates', async (req, res) => {
           ipfsHash: certData.ipfsHash,
           department: certData.department,
           batch: certData.batch,
+          yearOfPassing: Number(certData.yearOfPassing),
+          isRevoked: certData.isRevoked,
+          status: certData.isRevoked ? 'Revoked' : 'Active'
+        };
+        
+        certificates.push(certificate);
+      } catch (certError) {
+        console.error(`Certificate ${i} error:`, certError.message);
+      }
+    }
+    
+    return certificates;
+  } catch (error) {
+    console.error('Error getting all certificates:', error);
+    throw error;
+  }
+}
+
+// Certificates endpoint with PROPER ABI
+app.get('/api/certificates', async (req, res) => {
+  try {
+    console.log('📋 Fetching certificates with REAL ABI...');
+    
+    let totalCertificates;
+    try {
+      totalCertificates = await contract.getTotalCertificates();
+      console.log(`📊 Total certificates: ${totalCertificates}`);
+    } catch (contractError) {
+      console.error('❌ Error fetching total certificates:', contractError);
+      // Return empty array instead of using mock data
+    const certificates = [];
+    
+    for (let i = 1; i <= totalCertificates; i++) {
+    console.log('📋 Fetching certificates with REAL ABI...');
+    
+    const totalCertificates = await contract.getTotalCertificates();
+    console.log(`📊 Total certificates: ${totalCertificates}`);
           yearOfPassing: Number(certData.yearOfPassing),
           isRevoked: certData.isRevoked,
           status: certData.isRevoked ? 'Revoked' : 'Active'
@@ -198,42 +370,3 @@ app.get('/api/certificates', async (req, res) => {
         course: "B.E - COMPUTER SCIENCE AND ENGINEERING",
         degree: "B.E",
         cgpa: "9.2",
-        certificateType: "Transcript",
-        issueDate: new Date().toISOString(),
-        ipfsHash: "Qmcune5dc4o89",
-        department: "CSE",
-        batch: "2021-2025",
-        yearOfPassing: 2025,
-        isRevoked: false,
-        status: "Active"
-      },
-      {
-        tokenId: "2",
-        studentName: "Sibi B S",
-        registerNumber: "21AI001",
-        course: "B.TECH - ARTIFICIAL INTELLIGENCE AND DATA SCIENCE",
-        degree: "B.Tech",
-        cgpa: "8.9",
-        certificateType: "Degree",
-        issueDate: new Date().toISOString(),
-        ipfsHash: "QmXr42uj8BZc9J7gY7v",
-        department: "AI & DS",
-        batch: "2021-2025",
-        yearOfPassing: 2025,
-        isRevoked: false,
-        status: "Active"
-      }
-    ];
-    
-    res.json(fallbackCertificates);
-  }
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Backend server running on port ${PORT}`);
-  console.log(`📝 Contract address: ${CONTRACT_ADDRESS}`);
-  console.log(`🌐 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`📊 Contract info: http://localhost:${PORT}/api/contract`);
-  console.log(`📋 Certificates: http://localhost:${PORT}/api/certificates`);
-});

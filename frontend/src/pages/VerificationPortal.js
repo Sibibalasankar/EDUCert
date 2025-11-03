@@ -12,45 +12,77 @@ const VerificationPortal = () => {
   const [certificateData, setCertificateData] = useState(null);
 
   // Function to fetch certificate data from backend
-  const fetchCertificateFromBackend = async (method, value) => {
-    try {
-      console.log(`🔍 Verifying certificate via ${method}:`, value);
+const fetchCertificateFromBackend = async (method, value) => {
+  try {
+    console.log(`🔍 Verifying certificate via ${method}:`, value);
 
-      let endpoint = '';
-      
-      switch (method) {
-        case 'token':
-          endpoint = `http://localhost:5000/api/certificates/${value}`;
-          break;
-        case 'register':
-          endpoint = `http://localhost:5000/api/certificates/register/${value}`;
-          break;
-        case 'transaction':
-          // For transaction hash, we'll need to handle differently
-          // For now, use token ID endpoint
-          endpoint = `http://localhost:5000/api/certificates/${value}`;
-          break;
-        default:
-          throw new Error('Invalid verification method');
-      }
+    let endpoint = '';
+    
+    switch (method) {
+      case 'token':
+        endpoint = `http://localhost:5000/api/certificates/${value}`;
+        break;
+      case 'register':
+        // For student registration number, we'll use the main certificates endpoint
+        // and filter on the backend
+        endpoint = `http://localhost:5000/api/certificates?registerNumber=${value}`;
+        break;
+      case 'transaction':
+        // For transaction hash, we'll use the main certificates endpoint
+        // and filter on the backend
+        endpoint = `http://localhost:5000/api/certificates?transactionHash=${value}`;
+        break;
+      default:
+        throw new Error('Invalid verification method');
+    }
 
-      const response = await fetch(endpoint);
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.message || 'Certificate not found');
-      }
+    console.log('📞 Calling endpoint:', endpoint);
 
-      const data = await response.json();
-      console.log('✅ Certificate data received:', data);
-      return data;
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      // Add timeout
+      signal: AbortSignal.timeout(10000) // 10 second timeout
+    });
+    
+    console.log('📨 Response status:', response.status);
 
-    } catch (error) {
-      console.error('❌ Error fetching certificate:', error);
+    if (response.status === 404) {
+      throw new Error('Certificate not found');
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Backend error:', errorText);
+      throw new Error(`Server error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log('✅ Certificate data received:', data);
+    
+    if (!data || Object.keys(data).length === 0) {
+      throw new Error('Empty response from server');
+    }
+
+    return data;
+
+  } catch (error) {
+    console.error('❌ Error fetching certificate:', error);
+    
+    // Enhanced error messages
+    if (error.name === 'TimeoutError') {
+      throw new Error('Backend server is not responding. Please ensure the backend is running on port 5000.');
+    } else if (error.message.includes('Failed to fetch')) {
+      throw new Error('Cannot connect to backend server. Make sure the server is running on http://localhost:5000');
+    } else if (error.message.includes('Certificate not found')) {
+      throw new Error(`No certificate found with the provided ${verificationMethod}`);
+    } else {
       throw error;
     }
-  };
-
+  }
+};
   // Function to verify certificate validity
   const verifyCertificateValidity = async (certificateData) => {
     try {
