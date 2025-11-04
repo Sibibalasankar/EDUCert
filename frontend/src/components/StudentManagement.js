@@ -38,182 +38,114 @@ const StudentManagement = () => {
   const batches = generateBatchYears();
   const programs = getAllPrograms();
 
-  // Fetch students from REAL backend
-  // ✅ FIXED: Fetch students from REAL backend (with useCallback)
-  // ✅ FIXED: Better data transformation with proper fallbacks
-const fetchStudents = useCallback(async () => {
-  try {
-    setLoading(true);
-    console.log('📡 Fetching students from backend...');
+  // Fetch students from backend
+  const fetchStudents = useCallback(async () => {
+    try {
+      setLoading(true);
+      console.log('📡 Fetching students from backend...');
 
-    const response = await studentAPI.getAllStudents();
+      const response = await studentAPI.getAllStudents();
 
-    if (response.data.success) {
-      // ✅ IMPROVED: Better data transformation with realistic fallbacks
-      const backendStudents = response.data.students
-        .filter(student => student && student.studentId)
-        .map(student => {
-          // Calculate batch based on year of passing
-          const yearOfPassing = student.yearOfPassing || new Date().getFullYear() + 4;
-          const yearOfAdmission = yearOfPassing - 4;
-          const batch = `${yearOfAdmission}-${yearOfPassing}`;
-          
-          // Get course name from department if not available
-          const course = student.certificates?.[0]?.courseName || 
-                        `${student.degree || 'B.Tech'} in ${student.department || 'Unknown Department'}`;
-          
-          return {
-            _id: student._id,
-            name: student.name || 'Unknown',
-            registerNumber: student.studentId,
-            email: student.email || 'No email',
-            course: course,
-            degree: student.degree || 'B.Tech', // Default to B.Tech
-            cgpa: student.cgpa || '0.0', // Default CGPA
-            walletAddress: student.walletAddress || 'Not set',
-            phone: student.phone || 'Not provided',
-            department: student.department || 'Unknown',
-            program: student.department?.toLowerCase()?.replace(/[&\s]/g, '_') || 'unknown',
-            yearOfAdmission: yearOfAdmission,
-            yearOfPassing: yearOfPassing,
-            currentSemester: student.currentSemester || 1,
-            batch: batch,
-            createdAt: student.createdAt || new Date().toISOString(),
-            eligibilityStatus: student.eligibilityStatus || 'pending',
-            certificates: student.certificates || []
-          };
-        });
+      if (response.data.success) {
+        const backendStudents = response.data.students
+          .filter(student => student && student.studentId)
+          .map(student => {
+            const yearOfPassing = student.yearOfPassing || new Date().getFullYear() + 4;
+            const yearOfAdmission = yearOfPassing - 4;
+            const batch = `${yearOfAdmission}-${yearOfPassing}`;
+            
+            const course = student.certificates?.[0]?.courseName || 
+                          `${student.degree || 'B.Tech'} in ${student.department || 'Unknown Department'}`;
+            
+            return {
+              _id: student._id,
+              name: student.name || 'Unknown',
+              registerNumber: student.studentId,
+              email: student.email || 'No email',
+              course: course,
+              degree: student.degree || 'B.Tech',
+              cgpa: student.cgpa || '0.0',
+              walletAddress: student.walletAddress || 'Not set',
+              phone: student.phone || 'Not provided',
+              department: student.department || 'Unknown',
+              program: student.department?.toLowerCase()?.replace(/[&\s]/g, '_') || 'unknown',
+              yearOfAdmission: yearOfAdmission,
+              yearOfPassing: yearOfPassing,
+              currentSemester: student.currentSemester || 1,
+              batch: batch,
+              createdAt: student.createdAt || new Date().toISOString(),
+              eligibilityStatus: student.eligibilityStatus || 'pending',
+              certificates: student.certificates || []
+            };
+          });
 
-      setStudents(backendStudents);
-      console.log(`✅ Loaded ${backendStudents.length} students from backend`);
-      
-      // Debug: Log first student to verify transformation
-      if (backendStudents.length > 0) {
-        console.log('👤 First transformed student:', backendStudents[0]);
+        setStudents(backendStudents);
+        console.log(`✅ Loaded ${backendStudents.length} students from backend`);
       }
+    } catch (error) {
+      console.error('❌ Error fetching students from backend:', error);
+      setStudents([]);
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error('❌ Error fetching students from backend:', error);
-    // Fallback to mock data if backend fails
-    console.log('🔄 Using mock data as fallback...');
-    const mockStudents = getMockStudents();
-    setStudents(mockStudents);
-  } finally {
-    setLoading(false);
-  }
-}, []);
+  }, []);
 
-  // ✅ FIXED: useEffect with proper dependencies
   useEffect(() => {
     fetchStudents();
-  }, [fetchStudents]); // ✅ Now includes fetchStudents in dependencies
+  }, [fetchStudents]);
 
-  // Mock data fallback
-  const getMockStudents = () => {
-    return [
-      {
-        _id: '1',
-        name: 'Sibi B S',
-        registerNumber: '21AI001',
-        email: 'sibi@college.edu',
-        course: 'B.TECH - ARTIFICIAL INTELLIGENCE AND DATA SCIENCE',
-        degree: 'B.Tech',
-        cgpa: '8.9',
-        walletAddress: '0x6e7bd4a9c0b4695dd21bd7557a6c55ae4676cb1c',
-        phone: '+91 9876543210',
-        department: 'AI & DS',
-        program: 'ai_ds',
-        yearOfAdmission: 2021,
-        yearOfPassing: 2025,
-        currentSemester: 7,
-        batch: '2021-2025',
-        createdAt: new Date().toISOString(),
-        eligibilityStatus: 'pending'
-      },
-      {
-        _id: '2',
-        name: 'John Doe',
-        registerNumber: '21CS002',
-        email: 'john@college.edu',
-        course: 'B.E - COMPUTER SCIENCE AND ENGINEERING',
-        degree: 'B.E',
-        cgpa: '9.2',
-        walletAddress: '0x892d35Cc6634C0532925a3b8E',
-        phone: '+91 9876543211',
-        department: 'CSE',
-        program: 'cse',
-        yearOfAdmission: 2021,
-        yearOfPassing: 2025,
-        currentSemester: 7,
-        batch: '2021-2025',
-        createdAt: new Date().toISOString(),
-        eligibilityStatus: 'approved'
+  // Save student to backend
+  const saveStudentToBackend = async (studentData) => {
+    try {
+      console.log('💾 Saving student to backend:', studentData);
+
+      const backendStudentData = {
+        studentId: studentData.registerNumber,
+        name: studentData.name,
+        email: studentData.email,
+        department: studentData.department,
+        yearOfPassing: studentData.yearOfPassing,
+        walletAddress: studentData.walletAddress || '',
+        phone: studentData.phone || '',
+        cgpa: studentData.cgpa || '',
+        degree: studentData.degree || '',
+        currentSemester: studentData.currentSemester || 1
+      };
+
+      console.log('📤 Sending to backend:', backendStudentData);
+
+      let response;
+      
+      if (editingStudent) {
+        response = await studentAPI.updateStudent(editingStudent.registerNumber, backendStudentData);
+        console.log('🔄 Updating existing student:', editingStudent.registerNumber);
+      } else {
+        response = await studentAPI.registerStudent(backendStudentData);
+        console.log('🆕 Creating new student');
       }
-    ];
+
+      console.log('📥 Backend response:', response.data);
+
+      if (response.data && response.data.success) {
+        console.log('✅ Student saved to backend successfully');
+        return {
+          success: true,
+          data: response.data.student
+        };
+      } else {
+        throw new Error(response.data?.error || 'Failed to save student');
+      }
+    } catch (error) {
+      console.error('❌ Error saving student to backend:', error);
+      throw error;
+    }
   };
 
-// ✅ UPDATE THIS in StudentManagement.js
-const saveStudentToBackend = async (studentData) => {
-  try {
-    console.log('💾 Saving student to backend:', studentData);
-
-    // Transform frontend data to backend format
-    const backendStudentData = {
-      studentId: studentData.registerNumber,
-      name: studentData.name,
-      email: studentData.email,
-      department: studentData.department,
-      yearOfPassing: studentData.yearOfPassing,
-      walletAddress: studentData.walletAddress || '',
-      phone: studentData.phone || '',
-      cgpa: studentData.cgpa || '',
-      degree: studentData.degree || '',
-      currentSemester: studentData.currentSemester || 1
-    };
-
-    console.log('📤 Sending to backend:', backendStudentData);
-
-    let response;
-    
-    if (editingStudent) {
-      // ✅ UPDATE existing student using studentId (registerNumber)
-      response = await studentAPI.updateStudent(editingStudent.registerNumber, backendStudentData);
-      console.log('🔄 Updating existing student:', editingStudent.registerNumber);
-    } else {
-      // CREATE new student
-      response = await studentAPI.registerStudent(backendStudentData);
-      console.log('🆕 Creating new student');
-    }
-
-    console.log('📥 Backend response:', response.data);
-
-    if (response.data && response.data.success) {
-      console.log('✅ Student saved to backend successfully');
-      return {
-        success: true,
-        data: response.data.student
-      };
-    } else {
-      console.error('❌ Backend response indicates failure');
-      throw new Error(response.data?.error || 'Failed to save student');
-    }
-  } catch (error) {
-    console.error('❌ Error saving student to backend:', error);
-    
-    if (error.response) {
-      console.error('Response error:', error.response.data);
-      console.error('Response status:', error.response.status);
-    }
-    
-    throw error;
-  }
-};
-  // Delete student from REAL backend
+  // Delete student from backend
   const deleteStudentFromBackend = async (studentId) => {
     try {
       console.log('🗑️ Deleting student from backend:', studentId);
-
-      // For now, we'll simulate deletion since we don't have delete endpoint
+      // Simulate deletion
       return new Promise((resolve) => {
         setTimeout(() => {
           resolve({ success: true });
@@ -225,28 +157,10 @@ const saveStudentToBackend = async (studentData) => {
     }
   };
 
-  // Approve student for certificate minting
-  const approveStudentForMinting = async (studentId, certificateData) => {
-    try {
-      console.log('✅ Approving student for minting:', studentId);
-
-      const response = await studentAPI.approveStudent(studentId, certificateData);
-
-      if (response.data.success) {
-        console.log('✅ Student approved for certificate minting');
-        return response.data;
-      }
-    } catch (error) {
-      console.error('❌ Error approving student:', error);
-      throw error;
-    }
-  };
-
-  // ✅ FIXED: Safe filter with null checks
+  // Filter students
   const filteredStudents = students.filter(student => {
-    // Check if student exists and has required properties
     if (!student || !student.name || !student.registerNumber || !student.email) {
-      return false; // Skip invalid students
+      return false;
     }
 
     const matchesSearch =
@@ -314,13 +228,9 @@ const saveStudentToBackend = async (studentData) => {
 
     try {
       console.log('🔄 Starting save process...');
-
-      // ✅ FIXED: Remove the unused 'result' variable
       await saveStudentToBackend(studentData);
 
       console.log('✅ Save successful, updating UI...');
-
-      // Refresh the students list to get the latest data from backend
       await fetchStudents();
 
       resetForm();
@@ -353,26 +263,6 @@ const saveStudentToBackend = async (studentData) => {
         console.error('❌ Error deleting student:', error);
         alert('Failed to delete student. Please try again.');
       }
-    }
-  };
-
-  const handleApprove = async (student) => {
-    try {
-      const certificateData = {
-        courseName: student.course,
-        grade: `CGPA: ${student.cgpa}`,
-        ipfsHash: `QmXtest${student.registerNumber}ipfshash`
-      };
-
-      const result = await approveStudentForMinting(student.registerNumber, certificateData);
-
-      if (result.success) {
-        alert(`Student ${student.name} approved for certificate minting! Transaction: ${result.transactionHash}`);
-        // Refresh students to update status
-        fetchStudents();
-      }
-    } catch (error) {
-      alert('Failed to approve student. Please try again.');
     }
   };
 
@@ -861,12 +751,6 @@ const saveStudentToBackend = async (studentData) => {
                       className="text-blue-600 hover:text-blue-900 mr-3"
                     >
                       Edit
-                    </button>
-                    <button
-                      onClick={() => handleApprove(student)}
-                      className="text-green-600 hover:text-green-900 mr-3"
-                    >
-                      Approve
                     </button>
                     <button
                       onClick={() => handleDelete(student._id)}

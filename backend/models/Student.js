@@ -64,6 +64,15 @@ const studentSchema = new mongoose.Schema({
     default: 'pending'
   },
   certificates: [{
+    certificateType: {
+      type: String,
+      required: true,
+      enum: [
+        'Degree', 'Provisional', 'ConsolidatedMarksheet', 'CourseCompletion',
+        'Transcript', 'Diploma', 'RankCertificate', 'Participation', 
+        'Merit', 'Character'
+      ]
+    },
     certificateId: {
       type: String,
       trim: true
@@ -90,8 +99,22 @@ const studentSchema = new mongoose.Schema({
     },
     status: {
       type: String,
-      enum: ['minted', 'pending'],
+      enum: ['pending', 'approved', 'minted'],
       default: 'pending'
+    },
+    approvedBy: {
+      type: String,
+      trim: true
+    },
+    approvedAt: {
+      type: Date
+    },
+    mintedAt: {
+      type: Date
+    },
+    tokenId: {
+      type: String,
+      trim: true
     }
   }],
   approvedBy: {
@@ -114,5 +137,7 @@ studentSchema.index({ studentId: 1 });
 studentSchema.index({ email: 1 });
 studentSchema.index({ department: 1 });
 studentSchema.index({ eligibilityStatus: 1 });
+studentSchema.index({ 'certificates.certificateType': 1 });
+studentSchema.index({ 'certificates.status': 1 });
 
 export default mongoose.model('Student', studentSchema);

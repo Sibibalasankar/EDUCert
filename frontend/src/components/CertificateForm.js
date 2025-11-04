@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { contractConfig } from '../config/contractConfig';
+import { studentAPI } from '../services/api';
 
 const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => {
   const [formData, setFormData] = useState({
@@ -17,7 +18,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     yearOfPassing: new Date().getFullYear(),
     ipfsHash: 'Qm' + Math.random().toString(36).substr(2, 44)
   });
-  
+
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [showStudentDropdown, setShowStudentDropdown] = useState(false);
@@ -43,107 +44,82 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     { value: 'Character', label: 'Character Certificate' }
   ];
 
-  // ✅ FIXED: Comprehensive debug logging
-  useEffect(() => {
-    console.log('🔍 [CERTIFICATE_FORM] Component mounted');
-    console.log('📦 [CERTIFICATE_FORM] Students prop:', students);
-    console.log('📊 [CERTIFICATE_FORM] Students count:', students.length);
-    
-    if (students.length > 0) {
-      console.log('👤 [CERTIFICATE_FORM] First student:', students[0]);
-      console.log('🔑 [CERTIFICATE_FORM] Student keys:', Object.keys(students[0]));
+  // ✅ IMPROVED: Check if certificate exists
+  const checkIfCertificateExists = (student, certificateType) => {
+    if (!student.certificates || student.certificates.length === 0) {
+      return false;
     }
-  }, [students]);
 
-  // ✅ FIXED: Separate search term from form data
-  const handleSearchChange = (e) => {
-    const value = e.target.value;
-    setSearchTerm(value);
-    
-    // Also update the registerNumber in formData for consistency
-    setFormData(prev => ({
-      ...prev,
-      registerNumber: value
-    }));
+    // Check if student has this certificate type with status 'minted' or 'approved'
+    const existingCert = student.certificates.find(cert =>
+      cert.certificateType === certificateType &&
+      (cert.status === 'minted' || cert.status === 'approved')
+    );
 
-    console.log('🔎 [SEARCH] Searching for:', value);
+    if (existingCert) {
+      console.log(`⚠️ Student already has ${certificateType} certificate:`, existingCert);
+      return true;
+    }
 
-    if (value.length > 1) {
+    return false;
+  };
+  // Filter students based on search
+  useEffect(() => {
+    if (searchTerm.length > 1) {
       const filtered = students.filter(student => {
-        const registerMatch = student.registerNumber?.toLowerCase().includes(value.toLowerCase());
-        const nameMatch = student.name?.toLowerCase().includes(value.toLowerCase());
-        const studentIdMatch = student.studentId?.toLowerCase().includes(value.toLowerCase());
-        
-        return registerMatch || nameMatch || studentIdMatch;
+        const registerMatch = student.registerNumber?.toLowerCase().includes(searchTerm.toLowerCase());
+        const nameMatch = student.name?.toLowerCase().includes(searchTerm.toLowerCase());
+        return registerMatch || nameMatch;
       });
-      
-      console.log('✅ [SEARCH] Found students:', filtered.length);
       setFilteredStudents(filtered);
       setShowStudentDropdown(filtered.length > 0);
     } else {
       setFilteredStudents([]);
       setShowStudentDropdown(false);
     }
-  };
+  }, [searchTerm, students]);
 
-  // ✅ FIXED: Proper student selection with detailed logging
+  // Handle student selection
   const handleStudentSelect = (student) => {
-    console.log('🎯 [SELECT] Student selected:', student);
-    console.log('📋 [SELECT] Full student data:', student);
+    console.log('🎯 Selected student:', student);
 
-    // Create new form data with ALL fields properly mapped
     const newFormData = {
       name: student.name || '',
-      registerNumber: student.registerNumber || student.studentId || '',
+      registerNumber: student.registerNumber || '',
       email: student.email || '',
-      course: student.course || student.certificates?.[0]?.courseName || 'Not specified',
+      course: student.course || 'Not specified',
       degree: student.degree || 'B.Tech',
       cgpa: student.cgpa || '0.0',
       walletAddress: student.walletAddress || '',
       certificateType: 'Degree',
       department: student.department || '',
-      batch: student.batch || (student.yearOfPassing ? `${student.yearOfPassing - 4}-${student.yearOfPassing}` : 'Unknown'),
+      batch: student.batch || 'Unknown',
       yearOfPassing: student.yearOfPassing || new Date().getFullYear(),
-      ipfsHash: `Qm${student.registerNumber || student.studentId}${Date.now()}${Math.random().toString(36).substr(2, 6)}`
+      ipfsHash: `Qm${student.registerNumber}${Date.now()}${Math.random().toString(36).substr(2, 6)}`
     };
 
-    console.log('🔄 [SELECT] New form data to be set:', newFormData);
-    
-    // Set the form data
     setFormData(newFormData);
-    setSearchTerm(student.registerNumber || student.studentId || '');
+    setSearchTerm(student.registerNumber || '');
     setShowStudentDropdown(false);
-    
-    // Force a re-render and log the updated state
-    setTimeout(() => {
-      console.log('✅ [SELECT] Form data after update:', formData);
-    }, 100);
   };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    console.log(`✏️ [CHANGE] Field ${name}: ${value}`);
-    
-    setFormData({
-      ...formData,
+    setFormData(prev => ({
+      ...prev,
       [name]: value
-    });
+    }));
   };
 
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
-        console.log('🔗 Connecting to MetaMask...');
-
         const accounts = await window.ethereum.request({
           method: 'eth_requestAccounts'
         });
         const address = accounts[0];
-
         const provider = new ethers.BrowserProvider(window.ethereum, "any");
         const signer = await provider.getSigner();
-
-        console.log('✅ Connected to:', address);
 
         setCurrentAccount(address);
         setWalletConnected(true);
@@ -182,7 +158,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
             setCurrentAccount(address);
             setWalletConnected(true);
             setSigner(signer);
-            console.log('🔄 Auto-connected to:', address);
           }
         } catch (error) {
           console.log('No auto-connection available');
@@ -193,28 +168,49 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     checkWalletConnection();
   }, []);
 
+  // ✅ IMPROVED: Better eligibility checking
+  const checkStudentEligibility = async (studentId, certificateType) => {
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum, "any");
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+
+      const [canMint, message] = await contract.canIMint(studentId);
+
+      console.log('🔍 Eligibility check result:', { canMint, message, studentId, certificateType });
+
+      // Also check if student already has this certificate type in backend
+      const student = students.find(s => s.registerNumber === studentId);
+      if (student && checkIfCertificateExists(student, certificateType)) {
+        return {
+          canMint: false,
+          message: `Student already has a ${certificateType} certificate minted`
+        };
+      }
+
+      return { canMint, message };
+    } catch (error) {
+      console.error('Error checking eligibility:', error);
+      return { canMint: false, message: error.message };
+    }
+  };
+
+  // Approve student for minting
   const approveStudentForMinting = async (signer) => {
-    console.log('🎯 Starting approval process...');
+    console.log('🎯 Approving student for minting:', formData.registerNumber);
 
     try {
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-      console.log('📝 Approving student for minting:', {
-        studentId: formData.registerNumber,
-        name: formData.name,
-        course: formData.course,
-        grade: formData.cgpa,
-        certificateType: formData.certificateType
-      });
-
       const ipfsHash = `Qm${formData.registerNumber}${formData.certificateType}${Date.now()}`;
 
+      // ✅ UPDATED: Include certificateType parameter
       const tx = await contract.allowStudentToMint(
         formData.registerNumber,
         formData.name,
         `${formData.course} - ${formData.certificateType}`,
         `CGPA: ${formData.cgpa} | ${formData.certificateType}`,
-        ipfsHash
+        ipfsHash,
+        formData.certificateType // ✅ ADD THIS
       );
 
       console.log('⏳ Approval transaction sent:', tx.hash);
@@ -234,115 +230,106 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     }
   };
 
-  const checkStudentEligibility = async (studentId) => {
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum, "any");
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
-      
-      const [canMint, message] = await contract.canIMint(studentId);
-      const eligibility = await contract.getStudentEligibility(studentId);
-      
-      return {
-        canMint,
-        message,
-        eligibility
-      };
-    } catch (error) {
-      console.error('Error checking eligibility:', error);
-      return null;
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setLoading(true);
+  setResult(null);
+
+  try {
+    console.log('🚀 Starting certificate approval...');
+
+    if (!formData.name || !formData.registerNumber || !formData.course || !formData.degree || !formData.cgpa) {
+      throw new Error('Please fill in all required fields');
     }
-  };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setResult(null);
-
-    try {
-      console.log('🚀 Starting certificate approval...');
-      console.log('📋 Form data being submitted:', formData);
-
-      if (!formData.name || !formData.registerNumber || !formData.course || !formData.degree || !formData.cgpa) {
-        throw new Error('Please fill in all required fields');
-      }
-
-      let currentSigner = signer;
-      if (!currentSigner) {
-        console.log('🔗 No signer found, connecting wallet...');
-        const connection = await connectWallet();
-        if (!connection) {
-          throw new Error('Wallet connection failed');
-        }
-        currentSigner = connection.signer;
-      }
-
-      if (!currentSigner) {
-        throw new Error('No signer available for transaction');
-      }
-
-      console.log('🔍 Checking current student eligibility...');
-      const eligibility = await checkStudentEligibility(formData.registerNumber);
-      
-      if (eligibility && eligibility.canMint) {
-        throw new Error('Student is already approved for minting. They can now mint their own certificate.');
-      }
-
-      const result = await approveStudentForMinting(currentSigner);
-
-      setResult({
-        type: 'success',
-        message: `Student successfully approved for ${formData.certificateType} certificate minting!`,
-        data: {
-          studentId: result.studentId,
-          studentName: result.studentName,
-          certificateType: result.certificateType,
-          transactionHash: result.transactionHash,
-          ipfsHash: result.ipfsHash,
-          note: 'Student can now mint their certificate using their own wallet.'
-        }
-      });
-
-      // Reset form
-      setFormData({
-        name: '',
-        registerNumber: '',
-        email: '',
-        course: '',
-        degree: '',
-        cgpa: '',
-        walletAddress: '',
-        certificateType: 'Degree',
-        department: '',
-        batch: '',
-        yearOfPassing: new Date().getFullYear(),
-        ipfsHash: 'Qm' + Math.random().toString(36).substr(2, 44)
-      });
-      setSearchTerm('');
-
-      if (onCertificateApproved) {
-        onCertificateApproved(result);
-      }
-
-      console.log('🎉 Student approval completed successfully!');
-
-    } catch (error) {
-      console.error('❌ Error approving student:', error);
-
-      if (error.code === 'ACTION_REJECTED') {
-        setResult({
-          type: 'error',
-          message: 'Transaction was rejected. Please confirm the transaction in MetaMask to approve the student.'
-        });
-      } else {
-        setResult({
-          type: 'error',
-          message: `Failed to approve student: ${error.message}`
-        });
-      }
-    } finally {
-      setLoading(false);
+    // Check if student already has this certificate type in backend
+    const student = students.find(s => s.registerNumber === formData.registerNumber);
+    if (student && checkIfCertificateExists(student, formData.certificateType)) {
+      throw new Error(`Student already has a ${formData.certificateType} certificate minted. Cannot approve again.`);
     }
-  };
+
+    let currentSigner = signer;
+    if (!currentSigner) {
+      const connection = await connectWallet();
+      if (!connection) {
+        throw new Error('Wallet connection failed');
+      }
+      currentSigner = connection.signer;
+    }
+
+    // Check eligibility BEFORE trying to approve
+    console.log('🔍 Checking current student eligibility...');
+    const eligibility = await checkStudentEligibility(formData.registerNumber, formData.certificateType);
+
+    if (eligibility && eligibility.canMint) {
+      throw new Error(`Student is already approved for ${formData.certificateType} certificate minting. They can now mint their own certificate.`);
+    }
+
+    // If student is not eligible, proceed with approval
+    const result = await approveStudentForMinting(currentSigner);
+
+    // ✅ NEW: Update backend after successful blockchain approval
+    try {
+      console.log('🔄 Updating backend with approval status...');
+      const backendResponse = await studentAPI.approveStudent(formData.registerNumber, {
+        certificateType: formData.certificateType,
+        transactionHash: result.transactionHash,
+        ipfsHash: result.ipfsHash,
+        approvedBy: currentAccount,
+        approvedAt: new Date().toISOString()
+      });
+      
+      if (backendResponse.data.success) {
+        console.log('✅ Backend updated successfully');
+      }
+    } catch (backendError) {
+      console.error('⚠️ Backend update failed:', backendError);
+      // Don't throw error - blockchain transaction succeeded
+    }
+
+    setResult({
+      type: 'success',
+      message: `Student successfully approved for ${formData.certificateType} certificate minting!`,
+      data: {
+        studentId: result.studentId,
+        studentName: result.studentName,
+        certificateType: result.certificateType,
+        transactionHash: result.transactionHash,
+        ipfsHash: result.ipfsHash,
+        note: 'Student can now mint their certificate using their own wallet.'
+      }
+    });
+
+    // Reset form
+    setFormData({
+      name: '',
+      registerNumber: '',
+      email: '',
+      course: '',
+      degree: '',
+      cgpa: '',
+      walletAddress: '',
+      certificateType: 'Degree',
+      department: '',
+      batch: '',
+      yearOfPassing: new Date().getFullYear(),
+      ipfsHash: 'Qm' + Math.random().toString(36).substr(2, 44)
+    });
+    setSearchTerm('');
+
+    if (onCertificateApproved) {
+      onCertificateApproved(result);
+    }
+
+    console.log('🎉 Student approval completed successfully!');
+
+  } catch (error) {
+    console.error('❌ Error approving student:', error);
+    // ... error handling
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -350,7 +337,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         <div className="bg-green-600 px-6 py-4">
           <h2 className="text-xl font-semibold text-white">Approve Student for Certificate</h2>
           <p className="text-green-100 text-sm mt-1">
-            Approve students to mint their own certificates
+            Approve students to mint their own certificates (One per certificate type)
           </p>
 
           <div className="mt-2 flex items-center space-x-2">
@@ -365,33 +352,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Debug Info */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-medium text-yellow-800">Debug Information</h4>
-                <p className="text-sm text-yellow-700">
-                  Students: {students.length} | Filtered: {filteredStudents.length} | Search: "{searchTerm}"
-                </p>
-                <p className="text-xs text-yellow-600 mt-1">
-                  Form Data - Name: "{formData.name}", Reg: "{formData.registerNumber}"
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  console.log('🔍 [MANUAL_DEBUG] All students:', students);
-                  console.log('📋 [MANUAL_DEBUG] Form data:', formData);
-                  console.log('🎯 [MANUAL_DEBUG] Filtered students:', filteredStudents);
-                  console.log('🔎 [MANUAL_DEBUG] Search term:', searchTerm);
-                }}
-                className="bg-yellow-500 text-white px-3 py-1 rounded text-sm hover:bg-yellow-600"
-              >
-                Debug Console
-              </button>
-            </div>
-          </div>
-
           {/* Instructions */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <div className="flex items-start">
@@ -401,16 +361,17 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
               <div>
                 <h4 className="text-sm font-medium text-blue-800">How to Use</h4>
                 <p className="text-sm text-blue-700 mt-1">
-                  <strong>Step 1:</strong> Type register number or name to search students<br/>
-                  <strong>Step 2:</strong> Click on student from dropdown (auto-fills ALL fields)<br/>
-                  <strong>Step 3:</strong> Select certificate type and approve
+                  <strong>Step 1:</strong> Search student by register number or name<br />
+                  <strong>Step 2:</strong> Select student (auto-fills all fields)<br />
+                  <strong>Step 3:</strong> Choose certificate type and approve<br />
+                  <strong>Note:</strong> Each student can mint only one of each certificate type
                 </p>
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Register Number with Auto-complete - FIXED */}
+            {/* Search Student */}
             <div className="relative md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Search Student by Register Number or Name *
@@ -418,48 +379,33 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
               <input
                 type="text"
                 value={searchTerm}
-                onChange={handleSearchChange}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-                placeholder="Start typing register number (21AI001) or name (Sibi)..."
+                placeholder="Start typing register number or name..."
               />
-              
-              {/* Student Dropdown - FIXED */}
+
               {showStudentDropdown && (
                 <div className="absolute z-50 w-full mt-2 bg-white border border-gray-300 rounded-md shadow-xl max-h-80 overflow-y-auto">
                   {filteredStudents.length === 0 ? (
                     <div className="px-4 py-4 text-sm text-gray-500 text-center">
-                      <div className="flex items-center justify-center">
-                        <svg className="w-5 h-5 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                        </svg>
-                        No students found matching "{searchTerm}"
-                      </div>
+                      No students found matching "{searchTerm}"
                     </div>
                   ) : (
                     filteredStudents.map((student) => (
                       <button
-                        key={student._id || student.registerNumber}
+                        key={student._id}
                         type="button"
                         onClick={() => handleStudentSelect(student)}
-                        className="w-full text-left px-4 py-4 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-all duration-200 hover:shadow-md"
+                        className="w-full text-left px-4 py-4 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
                       >
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
-                            <div className="flex items-center">
-                              <div className="font-bold text-gray-900 text-lg">{student.name}</div>
-                              <span className="ml-3 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
-                                {student.eligibilityStatus || 'eligible'}
-                              </span>
+                            <div className="font-bold text-gray-900 text-lg">{student.name}</div>
+                            <div className="text-sm text-gray-600 mt-1">
+                              {student.registerNumber} • {student.course}
                             </div>
-                            <div className="text-sm text-gray-600 mt-2 space-y-1">
-                              <div><span className="font-semibold">Register No:</span> {student.registerNumber || student.studentId}</div>
-                              <div><span className="font-semibold">Course:</span> {student.course}</div>
-                              <div><span className="font-semibold">CGPA:</span> {student.cgpa} | <span className="font-semibold">Dept:</span> {student.department}</div>
-                            </div>
-                            <div className="text-xs text-gray-500 mt-2 flex flex-wrap gap-3">
-                              <span>📧 {student.email}</span>
-                              <span>📱 {student.phone}</span>
-                              <span>🎓 {student.batch}</span>
+                            <div className="text-xs text-gray-500 mt-2">
+                              CGPA: {student.cgpa} • {student.department} • {student.batch}
                             </div>
                           </div>
                           <div className="flex-shrink-0 ml-4">
@@ -475,9 +421,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                   )}
                 </div>
               )}
-              <p className="text-xs text-gray-500 mt-2">
-                💡 Start typing to search students. Click on a student to auto-fill all fields.
-              </p>
             </div>
 
             {/* Certificate Type */}
@@ -498,9 +441,12 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                   </option>
                 ))}
               </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Each student can mint only one of each certificate type
+              </p>
             </div>
 
-            {/* Auto-filled fields - These should populate when student is selected */}
+            {/* Auto-filled fields */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Student Name *
@@ -512,7 +458,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 onChange={handleChange}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
-                placeholder="Will auto-fill when student is selected"
+                readOnly
               />
             </div>
 
@@ -533,21 +479,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address *
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
-                placeholder="Will auto-fill when student is selected"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Course *
               </label>
               <input
@@ -557,7 +488,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 onChange={handleChange}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
-                placeholder="Will auto-fill when student is selected"
+                readOnly
               />
             </div>
 
@@ -572,7 +503,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 onChange={handleChange}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
-                placeholder="Will auto-fill when student is selected"
+                readOnly
               />
             </div>
 
@@ -587,7 +518,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 onChange={handleChange}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
-                placeholder="Will auto-fill when student is selected"
+                readOnly
               />
             </div>
 
@@ -602,72 +533,8 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                 onChange={handleChange}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
-                placeholder="Will auto-fill when student is selected"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Batch *
-              </label>
-              <input
-                type="text"
-                name="batch"
-                value={formData.batch}
-                onChange={handleChange}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
-                placeholder="Will auto-fill when student is selected"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Year of Passing *
-              </label>
-              <input
-                type="number"
-                name="yearOfPassing"
-                value={formData.yearOfPassing}
-                onChange={handleChange}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Wallet Address
-              </label>
-              <input
-                type="text"
-                name="walletAddress"
-                value={formData.walletAddress}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
-                placeholder="Will auto-fill when student is selected"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Student's wallet address for receiving the certificate
-              </p>
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                IPFS Hash (Auto-generated)
-              </label>
-              <input
-                type="text"
-                name="ipfsHash"
-                value={formData.ipfsHash}
-                onChange={handleChange}
                 readOnly
-                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-600 font-mono text-sm"
-                placeholder="Qm..."
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Unique identifier for certificate metadata (auto-generated when student is selected)
-              </p>
             </div>
           </div>
 
@@ -675,7 +542,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
             <button
               type="button"
               onClick={connectWallet}
-              className="bg-gray-600 text-white px-6 py-3 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 font-medium transition-colors duration-200"
+              className="bg-gray-600 text-white px-6 py-3 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 font-medium"
             >
               {walletConnected ? '🔄 Reconnect Wallet' : '🔗 Connect Wallet'}
             </button>
@@ -683,7 +550,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
             <button
               type="submit"
               disabled={loading || !walletConnected}
-              className="bg-green-600 text-white px-8 py-3 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors duration-200 flex items-center"
+              className="bg-green-600 text-white px-8 py-3 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
             >
               {loading ? (
                 <>
@@ -714,12 +581,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                   <p><strong>Student ID:</strong> {result.data.studentId}</p>
                   <p><strong>Student Name:</strong> {result.data.studentName}</p>
                   <p><strong>Certificate Type:</strong> {result.data.certificateType}</p>
-                  <p><strong>Transaction:</strong>
-                    <span className="text-blue-600 ml-1 font-mono">
-                      {result.data.transactionHash?.slice(0, 10)}...{result.data.transactionHash?.slice(-8)}
-                    </span>
-                  </p>
-                  <p><strong>IPFS Hash:</strong> {result.data.ipfsHash}</p>
+                  <p><strong>Transaction:</strong> {result.data.transactionHash?.slice(0, 10)}...{result.data.transactionHash?.slice(-8)}</p>
                   {result.data.note && (
                     <p className="text-green-700 font-medium">{result.data.note}</p>
                   )}

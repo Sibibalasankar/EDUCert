@@ -50,17 +50,41 @@ api.interceptors.response.use(
   }
 );
 
-// ✅ UPDATE THIS in services/api.js
+// ✅ UPDATED: Complete Student API endpoints
 export const studentAPI = {
+  // Student management
   getAllStudents: () => api.get('/students/all'),
   getStudent: (studentId) => api.get(`/students/${studentId}`),
   registerStudent: (studentData) => api.post('/students/register', studentData),
-  updateStudent: (studentId, studentData) => api.put(`/students/${studentId}`, studentData), // ✅ CHANGED
+  updateStudent: (studentId, studentData) => api.put(`/students/${studentId}`, studentData),
   deleteStudent: (studentId) => api.delete(`/students/${studentId}`),
+  
+  // Certificate approval and management
   approveStudent: (studentId, certificateData) => 
     api.post(`/students/${studentId}/approve`, certificateData),
+  
+  // ✅ NEW: Update certificate status after minting
+  updateCertificateStatus: (studentId, certificateData) => 
+    api.put(`/students/${studentId}/certificate-status`, certificateData),
+  
+  // ✅ NEW: Mint certificate (update backend after blockchain minting)
+  mintCertificate: (studentId, certificateData) => 
+    api.post(`/students/${studentId}/mint`, certificateData),
+  
+  // Certificate verification
   getCertificateStatus: (studentId) => 
     api.get(`/students/${studentId}/certificate-status`),
+  
   verifyCertificate: (studentId) => 
     api.get(`/students/${studentId}/verify`),
+  
+  // ✅ NEW: Get student with all certificates
+  getStudentWithCertificates: (studentId) => 
+    api.get(`/students/${studentId}/certificates`),
+  
+  // ✅ NEW: Revoke certificate approval
+  revokeCertificate: (studentId, certificateType) => 
+    api.delete(`/students/${studentId}/certificates/${certificateType}`),
 };
+
+export default api;
