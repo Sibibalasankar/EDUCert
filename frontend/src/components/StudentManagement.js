@@ -94,52 +94,62 @@ const StudentManagement = () => {
     fetchStudents();
   }, [fetchStudents]);
 
-  // Save student to backend
-  const saveStudentToBackend = async (studentData) => {
-    try {
-      console.log('💾 Saving student to backend:', studentData);
+// Save student to backend
+const saveStudentToBackend = async (studentData) => {
+  try {
+    console.log('💾 Saving student to backend:', studentData);
 
-      const backendStudentData = {
-        studentId: studentData.registerNumber,
-        name: studentData.name,
-        email: studentData.email,
-        department: studentData.department,
-        yearOfPassing: studentData.yearOfPassing,
-        walletAddress: studentData.walletAddress || '',
-        phone: studentData.phone || '',
-        cgpa: studentData.cgpa || '',
-        degree: studentData.degree || '',
-        currentSemester: studentData.currentSemester || 1
-      };
+    const backendStudentData = {
+      studentId: studentData.registerNumber,
+      name: studentData.name,
+      email: studentData.email,
+      department: studentData.department,
+      yearOfPassing: studentData.yearOfPassing,
+      walletAddress: studentData.walletAddress || '',
+      phone: studentData.phone || '',
+      cgpa: studentData.cgpa || '',
+      degree: studentData.degree || '',
+      currentSemester: studentData.currentSemester || 1
+    };
 
-      console.log('📤 Sending to backend:', backendStudentData);
+    console.log('📤 Sending to backend:', backendStudentData);
 
-      let response;
-      
-      if (editingStudent) {
-        response = await studentAPI.updateStudent(editingStudent.registerNumber, backendStudentData);
-        console.log('🔄 Updating existing student:', editingStudent.registerNumber);
-      } else {
-        response = await studentAPI.registerStudent(backendStudentData);
-        console.log('🆕 Creating new student');
-      }
-
-      console.log('📥 Backend response:', response.data);
-
-      if (response.data && response.data.success) {
-        console.log('✅ Student saved to backend successfully');
-        return {
-          success: true,
-          data: response.data.student
-        };
-      } else {
-        throw new Error(response.data?.error || 'Failed to save student');
-      }
-    } catch (error) {
-      console.error('❌ Error saving student to backend:', error);
-      throw error;
+    let response;
+    
+    if (editingStudent) {
+      response = await studentAPI.updateStudent(editingStudent._id, backendStudentData); // ✅ FIX: Use _id for update
+      console.log('🔄 Updating existing student:', editingStudent._id);
+    } else {
+      response = await studentAPI.registerStudent(backendStudentData);
+      console.log('🆕 Creating new student');
     }
-  };
+
+    console.log('📥 Backend response:', response.data);
+
+    if (response.data && response.data.success) {
+      console.log('✅ Student saved to backend successfully');
+      return {
+        success: true,
+        data: response.data.student
+      };
+    } else {
+      throw new Error(response.data?.error || 'Failed to save student');
+    }
+  } catch (error) {
+    console.error('❌ Error saving student to backend:', error);
+    
+    // ✅ IMPROVED: Better error message handling
+    let errorMessage = 'Failed to save student';
+    
+    if (error.response?.data?.error) {
+      errorMessage = error.response.data.error;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    throw new Error(errorMessage);
+  }
+};
 
   // Delete student from backend
   const deleteStudentFromBackend = async (studentId) => {
@@ -218,37 +228,46 @@ const StudentManagement = () => {
     }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+const handleSubmit = async (e) => {
+  e.preventDefault();
 
-    const studentData = {
-      ...formData,
-      batch: `${formData.yearOfAdmission}-${formData.yearOfPassing}`
-    };
+  const studentData = {
+    ...formData,
+    batch: `${formData.yearOfAdmission}-${formData.yearOfPassing}`
+  };
 
-    try {
-      console.log('🔄 Starting save process...');
-      await saveStudentToBackend(studentData);
+  try {
+    console.log('🔄 Starting save process...');
+    await saveStudentToBackend(studentData);
 
-      console.log('✅ Save successful, updating UI...');
-      await fetchStudents();
+    console.log('✅ Save successful, updating UI...');
+    await fetchStudents();
 
-      resetForm();
-      setShowForm(false);
+    resetForm();
+    setShowForm(false);
 
-      console.log('✅ Student saved successfully and UI updated');
+    console.log('✅ Student saved successfully and UI updated');
 
-    } catch (error) {
-      console.error('❌ Error in handleSubmit:', error);
-      alert('Failed to save student. Please check the form data and try again.');
+  } catch (error) {
+    console.error('❌ Error in handleSubmit:', error);
+    
+    // ✅ IMPROVED: Better error message display
+    if (error.message.includes('already exists')) {
+      alert(`Student registration failed: ${error.message}\n\nPlease use a different Student ID or Email, or edit the existing student.`);
+    } else {
+      alert(`Failed to save student: ${error.message}`);
     }
-  };
+  }
+};
 
-  const handleEdit = (student) => {
-    setFormData(student);
-    setEditingStudent(student);
-    setShowForm(true);
-  };
+const handleEdit = (student) => {
+  setFormData({
+    ...student,
+    registerNumber: student.registerNumber // Ensure registerNumber is properly set
+  });
+  setEditingStudent(student);
+  setShowForm(true);
+};
 
   const handleDelete = async (studentId) => {
     if (window.confirm('Are you sure you want to delete this student?')) {

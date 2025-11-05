@@ -1,143 +1,80 @@
 import mongoose from 'mongoose';
 
-const studentSchema = new mongoose.Schema({
-  studentId: {
+const certificateSchema = new mongoose.Schema({
+  certificateType: {
     type: String,
-    required: [true, 'Student ID is required'],
-    unique: true,
-    trim: true,
-    uppercase: true
+    required: true,
+    enum: ['Degree', 'Provisional', 'ConsolidatedMarksheet', 'CourseCompletion', 'Transcript', 'Diploma', 'RankCertificate', 'Participation', 'Merit', 'Character']
   },
-  name: {
+  status: {
     type: String,
-    required: [true, 'Student name is required'],
-    trim: true
-  },
-  email: {
-    type: String,
-    required: [true, 'Email is required'],
-    unique: true,
-    trim: true,
-    lowercase: true,
-    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
-  },
-  department: {
-    type: String,
-    required: [true, 'Department is required'],
-    trim: true
-  },
-  yearOfPassing: {
-    type: Number,
-    required: [true, 'Year of passing is required'],
-    min: [2000, 'Year must be after 2000'],
-    max: [2030, 'Year must be before 2030']
-  },
-  walletAddress: {
-    type: String,
-    default: '',
-    trim: true
-  },
-  phone: {
-    type: String,
-    default: '',
-    trim: true
-  },
-  cgpa: {
-    type: String,
-    default: '',
-    trim: true
-  },
-  degree: {
-    type: String,
-    default: '',
-    trim: true
-  },
-  currentSemester: {
-    type: Number,
-    default: 1,
-    min: [1, 'Semester must be at least 1'],
-    max: [8, 'Semester cannot exceed 8']
-  },
-  eligibilityStatus: {
-    type: String,
-    enum: ['pending', 'approved', 'rejected'],
+    enum: ['pending', 'approved', 'minted', 'rejected'],
     default: 'pending'
   },
-  certificates: [{
-    certificateType: {
-      type: String,
-      required: true,
-      enum: [
-        'Degree', 'Provisional', 'ConsolidatedMarksheet', 'CourseCompletion',
-        'Transcript', 'Diploma', 'RankCertificate', 'Participation', 
-        'Merit', 'Character'
-      ]
-    },
-    certificateId: {
-      type: String,
-      trim: true
-    },
-    ipfsHash: {
-      type: String,
-      trim: true
-    },
-    courseName: {
-      type: String,
-      trim: true
-    },
-    grade: {
-      type: String,
-      trim: true
-    },
-    issueDate: {
-      type: Date,
-      default: Date.now
-    },
-    transactionHash: {
-      type: String,
-      trim: true
-    },
-    status: {
-      type: String,
-      enum: ['pending', 'approved', 'minted'],
-      default: 'pending'
-    },
-    approvedBy: {
-      type: String,
-      trim: true
-    },
-    approvedAt: {
-      type: Date
-    },
-    mintedAt: {
-      type: Date
-    },
-    tokenId: {
-      type: String,
-      trim: true
-    }
-  }],
-  approvedBy: {
-    type: String,
-    default: null,
-    trim: true
-  },
-  approvedAt: {
-    type: Date,
-    default: null
-  },
+  transactionHash: String,
+  ipfsHash: String,
+  approvedBy: String,
+  approvedAt: Date,
+  mintedAt: Date,
   createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
     type: Date,
     default: Date.now
   }
 });
 
-// Add index for better performance
-studentSchema.index({ studentId: 1 });
-studentSchema.index({ email: 1 });
-studentSchema.index({ department: 1 });
-studentSchema.index({ eligibilityStatus: 1 });
-studentSchema.index({ 'certificates.certificateType': 1 });
-studentSchema.index({ 'certificates.status': 1 });
+const studentSchema = new mongoose.Schema({
+  studentId: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  name: {
+    type: String,
+    required: true
+  },
+  email: {
+    type: String,
+    required: true
+  },
+  department: {
+    type: String,
+    required: true
+  },
+  yearOfPassing: Number,
+  walletAddress: String,
+  phone: String,
+  cgpa: String,
+  degree: String,
+  currentSemester: Number,
+  
+  // ✅ FIXED: Properly define certificates as an array of subdocuments
+  certificates: [certificateSchema],
+  
+  eligibilityStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending'
+  }
+}, {
+  timestamps: true
+});
 
-export default mongoose.model('Student', studentSchema);
+// ✅ ADD: Pre-save middleware to update updatedAt for certificates
+studentSchema.pre('save', function(next) {
+  if (this.certificates && this.isModified('certificates')) {
+    this.certificates.forEach(cert => {
+      if (cert.isModified()) {
+        cert.updatedAt = new Date();
+      }
+    });
+  }
+  next();
+});
+
+const Student = mongoose.model('Student', studentSchema);
+
+export default Student;

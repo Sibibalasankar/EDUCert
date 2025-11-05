@@ -1,90 +1,76 @@
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'http://localhost:3001/api';
 
 const api = axios.create({
   baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000, // 10 second timeout
+  timeout: 30000,
 });
 
-// Request interceptor for logging
+// Request interceptor
 api.interceptors.request.use(
   (config) => {
-    console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`);
-    if (config.data) {
-      console.log('📦 Request Data:', config.data);
+    const token = localStorage.getItem('adminToken') || localStorage.getItem('studentToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
   (error) => {
-    console.error('❌ Request Error:', error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor for error handling
+// Response interceptor
 api.interceptors.response.use(
   (response) => {
-    console.log(`✅ ${response.status} ${response.config.url}`);
     return response;
   },
   (error) => {
-    console.error('❌ Response Error:', {
-      status: error.response?.status,
-      data: error.response?.data,
-      url: error.config?.url
-    });
-    
-    if (error.response?.status === 404) {
-      console.error('❌ Endpoint not found:', error.config.url);
-    } else if (error.response?.status === 500) {
-      console.error('❌ Server error:', error.response.data);
-    } else if (error.code === 'ECONNREFUSED') {
-      console.error('❌ Cannot connect to server. Is the backend running?');
-    }
-    
     return Promise.reject(error);
   }
 );
 
-// ✅ UPDATED: Complete Student API endpoints
 export const studentAPI = {
-  // Student management
   getAllStudents: () => api.get('/students/all'),
   getStudent: (studentId) => api.get(`/students/${studentId}`),
   registerStudent: (studentData) => api.post('/students/register', studentData),
   updateStudent: (studentId, studentData) => api.put(`/students/${studentId}`, studentData),
   deleteStudent: (studentId) => api.delete(`/students/${studentId}`),
+  approveStudent: (studentId, approvalData) => api.post(`/students/${studentId}/approve`, approvalData),
+  getStudentByRegisterNumber: (registerNumber) => api.get(`/students/register/${registerNumber}`),
+  bulkRegisterStudents: (studentsData) => api.post('/students/bulk-register', studentsData),
+  getStudentCertificates: (studentId) => api.get(`/students/${studentId}/certificates`),
+};
+
+export const certificateAPI = {
+  // ✅ FIXED: Match backend routes exactly
+  createCertificate: (certificateData) => api.post('/certificates/create', certificateData),
+  getStudentCertificates: (studentId) => api.get(`/certificates/student/${studentId}`),
+  approveCertificate: (certificateId, approvalData) => api.put(`/certificates/approve/${certificateId}`, approvalData),
+  mintCertificate: (certificateId, mintData) => api.post(`/certificates/mint/${certificateId}`, mintData),
+  getAllCertificates: () => api.get('/certificates/all'),
   
-  // Certificate approval and management
-  approveStudent: (studentId, certificateData) => 
-    api.post(`/students/${studentId}/approve`, certificateData),
+  // ✅ FIXED: This matches your backend route
+  updateCertificate: (certificateId, updateData) => 
+    api.put(`/certificates/${certificateId}/mint-status`, updateData),
   
-  // ✅ NEW: Update certificate status after minting
-  updateCertificateStatus: (studentId, certificateData) => 
-    api.put(`/students/${studentId}/certificate-status`, certificateData),
-  
-  // ✅ NEW: Mint certificate (update backend after blockchain minting)
-  mintCertificate: (studentId, certificateData) => 
-    api.post(`/students/${studentId}/mint`, certificateData),
-  
-  // Certificate verification
-  getCertificateStatus: (studentId) => 
-    api.get(`/students/${studentId}/certificate-status`),
-  
-  verifyCertificate: (studentId) => 
-    api.get(`/students/${studentId}/verify`),
-  
-  // ✅ NEW: Get student with all certificates
-  getStudentWithCertificates: (studentId) => 
-    api.get(`/students/${studentId}/certificates`),
-  
-  // ✅ NEW: Revoke certificate approval
-  revokeCertificate: (studentId, certificateType) => 
-    api.delete(`/students/${studentId}/certificates/${certificateType}`),
+  verifyCertificate: (certificateId) => api.get(`/certificates/verify/${certificateId}`),
+  getCertificateByTxHash: (txHash) => api.get(`/certificates/tx/${txHash}`),
+  getCertificateById: (certificateId) => api.get(`/certificates/${certificateId}`),
+  deleteCertificate: (certificateId) => api.delete(`/certificates/${certificateId}`),
+};
+
+export const adminAPI = {
+  getStats: () => api.get('/admin/stats'),
+  getPendingApprovals: () => api.get('/admin/pending-approvals'),
+  bulkApproveStudents: (studentIds) => api.post('/admin/bulk-approve', { studentIds }),
+  getAdminProfile: () => api.get('/admin/profile'),
+  updateAdminProfile: (profileData) => api.put('/admin/profile', profileData),
+  getSystemLogs: () => api.get('/admin/system-logs'),
 };
 
 export default api;

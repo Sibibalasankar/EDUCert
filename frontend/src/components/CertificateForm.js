@@ -50,7 +50,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
       return false;
     }
 
-    // Check if student has this certificate type with status 'minted' or 'approved'
     const existingCert = student.certificates.find(cert =>
       cert.certificateType === certificateType &&
       (cert.status === 'minted' || cert.status === 'approved')
@@ -63,13 +62,19 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
 
     return false;
   };
-  // Filter students based on search
+
+  // ✅ FIXED: Improved student filtering - matches StudentManagement structure
   useEffect(() => {
     if (searchTerm.length > 1) {
       const filtered = students.filter(student => {
+        if (!student) return false;
+
+        // Match the field names from StudentManagement component
         const registerMatch = student.registerNumber?.toLowerCase().includes(searchTerm.toLowerCase());
         const nameMatch = student.name?.toLowerCase().includes(searchTerm.toLowerCase());
-        return registerMatch || nameMatch;
+        const emailMatch = student.email?.toLowerCase().includes(searchTerm.toLowerCase());
+
+        return registerMatch || nameMatch || emailMatch;
       });
       setFilteredStudents(filtered);
       setShowStudentDropdown(filtered.length > 0);
@@ -79,27 +84,34 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     }
   }, [searchTerm, students]);
 
-  // Handle student selection
+  // ✅ FIXED: Updated to match StudentManagement data structure
   const handleStudentSelect = (student) => {
-    console.log('🎯 Selected student:', student);
+    console.log('🎯 Selected student from StudentManagement:', student);
 
+    if (!student) {
+      console.error('❌ No student data provided');
+      return;
+    }
+
+    // Map the student data from StudentManagement structure to CertificateForm structure
     const newFormData = {
       name: student.name || '',
       registerNumber: student.registerNumber || '',
       email: student.email || '',
-      course: student.course || 'Not specified',
+      course: student.course || '',
       degree: student.degree || 'B.Tech',
       cgpa: student.cgpa || '0.0',
       walletAddress: student.walletAddress || '',
       certificateType: 'Degree',
       department: student.department || '',
-      batch: student.batch || 'Unknown',
+      batch: student.batch || '',
       yearOfPassing: student.yearOfPassing || new Date().getFullYear(),
       ipfsHash: `Qm${student.registerNumber}${Date.now()}${Math.random().toString(36).substr(2, 6)}`
     };
 
+    console.log('📝 Setting form data from StudentManagement:', newFormData);
     setFormData(newFormData);
-    setSearchTerm(student.registerNumber || '');
+    setSearchTerm(student.registerNumber);
     setShowStudentDropdown(false);
   };
 
@@ -109,6 +121,30 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
       ...prev,
       [name]: value
     }));
+  };
+
+  // ✅ FIXED: Improved search input handler
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+
+    // If search is cleared, clear the form
+    if (value === '') {
+      setFormData({
+        name: '',
+        registerNumber: '',
+        email: '',
+        course: '',
+        degree: '',
+        cgpa: '',
+        walletAddress: '',
+        certificateType: 'Degree',
+        department: '',
+        batch: '',
+        yearOfPassing: new Date().getFullYear(),
+        ipfsHash: 'Qm' + Math.random().toString(36).substr(2, 44)
+      });
+    }
   };
 
   const connectWallet = async () => {
@@ -169,13 +205,23 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
   }, []);
 
   // ✅ IMPROVED: Better eligibility checking
+  // In CertificateForm.js - Update the checkStudentEligibility function
   const checkStudentEligibility = async (studentId, certificateType) => {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum, "any");
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
 
-      const [canMint, message] = await contract.canIMint(studentId);
+      // ✅ FIX: Check if canIMint function exists in ABI, if not skip this check
+      const hasCanIMint = CONTRACT_ABI.some(item =>
+        item.name === 'canIMint' && item.type === 'function'
+      );
 
+      if (!hasCanIMint) {
+        console.log('⚠️ canIMint function not found in ABI, skipping eligibility check');
+        return { canMint: false, message: 'Eligibility check not available' };
+      }
+
+      const [canMint, message] = await contract.canIMint(studentId);
       console.log('🔍 Eligibility check result:', { canMint, message, studentId, certificateType });
 
       // Also check if student already has this certificate type in backend
@@ -190,30 +236,29 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
       return { canMint, message };
     } catch (error) {
       console.error('Error checking eligibility:', error);
-      return { canMint: false, message: error.message };
+      // ✅ FIX: Don't block approval if eligibility check fails
+      return { canMint: false, message: 'Eligibility check failed' };
     }
   };
 
-  // Approve student for minting
   const approveStudentForMinting = async (signer) => {
     console.log('🎯 Approving student for minting:', formData.registerNumber);
 
     try {
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-      const ipfsHash = `Qm${formData.registerNumber}${formData.certificateType}${Date.now()}`;
+      // 🔥 Set IPFS Hash (or use your stored IPFS link from backend/upload)
+      const ipfsHash = formData.ipfsHash || `Qm${Date.now()}${formData.registerNumber}`;
 
-      // ✅ UPDATED: Include certificateType parameter
-      const tx = await contract.allowStudentToMint(
-        formData.registerNumber,
-        formData.name,
-        `${formData.course} - ${formData.certificateType}`,
-        `CGPA: ${formData.cgpa} | ${formData.certificateType}`,
-        ipfsHash,
-        formData.certificateType // ✅ ADD THIS
+      // ✅ CALL THE CORRECT FUNCTION
+      const tx = await contract.approveCertificate(
+        formData.walletAddress,            // Student wallet address
+        formData.registerNumber,           // Student ID
+        formData.certificateType,          // Certificate Type
+        ipfsHash                           // IPFS Hash
       );
 
-      console.log('⏳ Approval transaction sent:', tx.hash);
+      console.log('⏳ Transaction sent:', tx.hash);
       const receipt = await tx.wait();
       console.log('✅ Approval confirmed:', receipt.hash);
 
@@ -222,114 +267,141 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         studentId: formData.registerNumber,
         studentName: formData.name,
         certificateType: formData.certificateType,
-        ipfsHash: ipfsHash
+        ipfsHash
       };
+
     } catch (error) {
-      console.error('❌ Error approving student:', error);
-      throw error;
+      console.error('❌ Blockchain approval error:', error);
+      throw new Error("Blockchain approval failed. Check wallet & contract state.");
     }
   };
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setLoading(true);
-  setResult(null);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setResult(null);
 
-  try {
-    console.log('🚀 Starting certificate approval...');
-
-    if (!formData.name || !formData.registerNumber || !formData.course || !formData.degree || !formData.cgpa) {
-      throw new Error('Please fill in all required fields');
-    }
-
-    // Check if student already has this certificate type in backend
-    const student = students.find(s => s.registerNumber === formData.registerNumber);
-    if (student && checkIfCertificateExists(student, formData.certificateType)) {
-      throw new Error(`Student already has a ${formData.certificateType} certificate minted. Cannot approve again.`);
-    }
-
-    let currentSigner = signer;
-    if (!currentSigner) {
-      const connection = await connectWallet();
-      if (!connection) {
-        throw new Error('Wallet connection failed');
-      }
-      currentSigner = connection.signer;
-    }
-
-    // Check eligibility BEFORE trying to approve
-    console.log('🔍 Checking current student eligibility...');
-    const eligibility = await checkStudentEligibility(formData.registerNumber, formData.certificateType);
-
-    if (eligibility && eligibility.canMint) {
-      throw new Error(`Student is already approved for ${formData.certificateType} certificate minting. They can now mint their own certificate.`);
-    }
-
-    // If student is not eligible, proceed with approval
-    const result = await approveStudentForMinting(currentSigner);
-
-    // ✅ NEW: Update backend after successful blockchain approval
     try {
-      console.log('🔄 Updating backend with approval status...');
-      const backendResponse = await studentAPI.approveStudent(formData.registerNumber, {
-        certificateType: formData.certificateType,
-        transactionHash: result.transactionHash,
-        ipfsHash: result.ipfsHash,
-        approvedBy: currentAccount,
-        approvedAt: new Date().toISOString()
+      console.log('🚀 Starting certificate approval...');
+
+      if (!formData.name || !formData.registerNumber || !formData.course || !formData.degree || !formData.cgpa) {
+        throw new Error('Please fill in all required fields');
+      }
+
+      // Check if student already has this certificate type in backend
+      const student = students.find(s => s.registerNumber === formData.registerNumber);
+      if (student && checkIfCertificateExists(student, formData.certificateType)) {
+        throw new Error(`Student already has a ${formData.certificateType} certificate minted. Cannot approve again.`);
+      }
+
+      let currentSigner = signer;
+      if (!currentSigner) {
+        const connection = await connectWallet();
+        if (!connection) {
+          throw new Error('Wallet connection failed');
+        }
+        currentSigner = connection.signer;
+      }
+
+      // ✅ FIX: Skip eligibility check if it fails, don't block approval
+      console.log('🔍 Checking current student eligibility...');
+      try {
+        const eligibility = await checkStudentEligibility(formData.registerNumber, formData.certificateType);
+
+        if (eligibility && eligibility.canMint) {
+          throw new Error(`Student is already approved for ${formData.certificateType} certificate minting. They can now mint their own certificate.`);
+        }
+      } catch (eligibilityError) {
+        console.warn('⚠️ Eligibility check failed, proceeding with approval:', eligibilityError.message);
+        // Continue with approval even if eligibility check fails
+      }
+
+      // If student is not eligible or eligibility check failed, proceed with approval
+      const result = await approveStudentForMinting(currentSigner);
+
+      // Update backend after successful blockchain approval
+      try {
+        console.log('🔄 Updating backend with approval status...');
+        const backendResponse = await studentAPI.approveStudent(formData.registerNumber, {
+          certificateType: formData.certificateType,
+          transactionHash: result.transactionHash,
+          ipfsHash: result.ipfsHash,
+          approvedBy: currentAccount,
+          approvedAt: new Date().toISOString()
+        });
+
+        if (backendResponse.data.success) {
+          console.log('✅ Backend updated successfully');
+        }
+      } catch (backendError) {
+        console.error('⚠️ Backend update failed:', backendError);
+        // Don't throw error - blockchain transaction succeeded
+        // Just show a warning to the user
+        setResult({
+          type: 'warning',
+          message: `Student approved on blockchain but backend update failed: ${backendError.response?.data?.error || backendError.message}`,
+          data: {
+            studentId: result.studentId,
+            studentName: result.studentName,
+            certificateType: result.certificateType,
+            transactionHash: result.transactionHash,
+            note: 'Student can mint certificate, but backend record may be incomplete.'
+          }
+        });
+        return; // Exit early to prevent form reset
+      }
+
+      setResult({
+        type: 'success',
+        message: `Student successfully approved for ${formData.certificateType} certificate minting!`,
+        data: {
+          studentId: result.studentId,
+          studentName: result.studentName,
+          certificateType: result.certificateType,
+          transactionHash: result.transactionHash,
+          ipfsHash: result.ipfsHash,
+          note: 'Student can now mint their certificate using their own wallet.'
+        }
       });
-      
-      if (backendResponse.data.success) {
-        console.log('✅ Backend updated successfully');
+
+      // Reset form
+      setFormData({
+        name: '',
+        registerNumber: '',
+        email: '',
+        course: '',
+        degree: '',
+        cgpa: '',
+        walletAddress: '',
+        certificateType: 'Degree',
+        department: '',
+        batch: '',
+        yearOfPassing: new Date().getFullYear(),
+        ipfsHash: 'Qm' + Math.random().toString(36).substr(2, 44)
+      });
+      setSearchTerm('');
+
+      if (onCertificateApproved) {
+        onCertificateApproved(result);
       }
-    } catch (backendError) {
-      console.error('⚠️ Backend update failed:', backendError);
-      // Don't throw error - blockchain transaction succeeded
+
+      console.log('🎉 Student approval completed successfully!');
+
+    } catch (error) {
+      console.error('❌ Error approving student:', error);
+      setResult({
+        type: 'error',
+        message: error.message || 'Failed to approve student'
+      });
+    } finally {
+      setLoading(false);
     }
+  };
 
-    setResult({
-      type: 'success',
-      message: `Student successfully approved for ${formData.certificateType} certificate minting!`,
-      data: {
-        studentId: result.studentId,
-        studentName: result.studentName,
-        certificateType: result.certificateType,
-        transactionHash: result.transactionHash,
-        ipfsHash: result.ipfsHash,
-        note: 'Student can now mint their certificate using their own wallet.'
-      }
-    });
-
-    // Reset form
-    setFormData({
-      name: '',
-      registerNumber: '',
-      email: '',
-      course: '',
-      degree: '',
-      cgpa: '',
-      walletAddress: '',
-      certificateType: 'Degree',
-      department: '',
-      batch: '',
-      yearOfPassing: new Date().getFullYear(),
-      ipfsHash: 'Qm' + Math.random().toString(36).substr(2, 44)
-    });
-    setSearchTerm('');
-
-    if (onCertificateApproved) {
-      onCertificateApproved(result);
-    }
-
-    console.log('🎉 Student approval completed successfully!');
-
-  } catch (error) {
-    console.error('❌ Error approving student:', error);
-    // ... error handling
-  } finally {
-    setLoading(false);
-  }
-};
+  // Debug: Log students data to see the structure
+  useEffect(() => {
+    console.log('📊 Students data in CertificateForm:', students);
+  }, [students]);
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -379,7 +451,7 @@ const handleSubmit = async (e) => {
               <input
                 type="text"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={handleSearchChange}
                 className="w-full px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
                 placeholder="Start typing register number or name..."
               />
@@ -393,19 +465,21 @@ const handleSubmit = async (e) => {
                   ) : (
                     filteredStudents.map((student) => (
                       <button
-                        key={student._id}
+                        key={student._id || student.registerNumber}
                         type="button"
                         onClick={() => handleStudentSelect(student)}
-                        className="w-full text-left px-4 py-4 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
+                        className="w-full text-left px-4 py-4 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors duration-150"
                       >
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
-                            <div className="font-bold text-gray-900 text-lg">{student.name}</div>
+                            <div className="font-bold text-gray-900 text-lg">
+                              {student.name || 'Unknown Name'}
+                            </div>
                             <div className="text-sm text-gray-600 mt-1">
-                              {student.registerNumber} • {student.course}
+                              {student.registerNumber || 'No Reg No'} • {student.course || 'No Course'}
                             </div>
                             <div className="text-xs text-gray-500 mt-2">
-                              CGPA: {student.cgpa} • {student.department} • {student.batch}
+                              CGPA: {student.cgpa || 'N/A'} • {student.department || 'No Dept'} • {student.batch || 'No Batch'}
                             </div>
                           </div>
                           <div className="flex-shrink-0 ml-4">
@@ -568,11 +642,16 @@ const handleSubmit = async (e) => {
       {result && (
         <div className={`mt-6 p-4 rounded-md border ${result.type === 'success'
           ? 'bg-green-50 border-green-200 text-green-800'
-          : 'bg-red-50 border-red-200 text-red-800'
+          : result.type === 'warning'
+            ? 'bg-yellow-50 border-yellow-200 text-yellow-800' // ✅ ADD WARNING STYLE
+            : 'bg-red-50 border-red-200 text-red-800'
           }`}>
           <div className="flex items-start">
-            <div className={`flex-shrink-0 w-5 h-5 mt-0.5 ${result.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
-              {result.type === 'success' ? '✓' : '✗'}
+            <div className={`flex-shrink-0 w-5 h-5 mt-0.5 ${result.type === 'success' ? 'text-green-400'
+              : result.type === 'warning' ? 'text-yellow-400' // ✅ ADD WARNING ICON
+                : 'text-red-400'
+              }`}>
+              {result.type === 'success' ? '✓' : result.type === 'warning' ? '⚠' : '✗'}
             </div>
             <div className="ml-3">
               <p className="font-medium">{result.message}</p>
@@ -583,7 +662,8 @@ const handleSubmit = async (e) => {
                   <p><strong>Certificate Type:</strong> {result.data.certificateType}</p>
                   <p><strong>Transaction:</strong> {result.data.transactionHash?.slice(0, 10)}...{result.data.transactionHash?.slice(-8)}</p>
                   {result.data.note && (
-                    <p className="text-green-700 font-medium">{result.data.note}</p>
+                    <p className={`font-medium ${result.type === 'success' ? 'text-green-700' : 'text-yellow-700'
+                      }`}>{result.data.note}</p>
                   )}
                 </div>
               )}

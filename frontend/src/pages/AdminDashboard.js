@@ -3,7 +3,7 @@ import { useWeb3 } from '../context/Web3Context';
 import CertificateForm from '../components/CertificateForm';
 import CertificateList from '../components/CertificateList';
 import StudentManagement from '../components/StudentManagement';
-import { studentAPI } from '../services/api'; // Add this import
+import { studentAPI, certificateAPI } from '../services/api';
 
 const AdminDashboard = () => {
   const { isConnected, connectWallet, account } = useWeb3();
@@ -11,60 +11,49 @@ const AdminDashboard = () => {
   const [recentCertificate, setRecentCertificate] = useState(null);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // ✅ FIXED: Fetch REAL students from backend instead of mock data
   const fetchStudents = async () => {
     try {
       setLoading(true);
-      console.log('📡 AdminDashboard: Fetching real students from backend...');
-
+      setError(null);
       const response = await studentAPI.getAllStudents();
-
-      if (response.data.success) {
-        // ✅ Use the SAME data transformation as StudentManagement
-        const backendStudents = response.data.students
-          .filter(student => student && student.studentId)
-          .map(student => {
-            const yearOfPassing = student.yearOfPassing || new Date().getFullYear() + 4;
-            const yearOfAdmission = yearOfPassing - 4;
-            const batch = `${yearOfAdmission}-${yearOfPassing}`;
-            
-            const course = student.certificates?.[0]?.courseName || 
-                          `${student.degree || 'B.Tech'} in ${student.department || 'Unknown Department'}`;
-            
-            return {
-              _id: student._id,
-              name: student.name || 'Unknown',
-              registerNumber: student.studentId,
-              email: student.email || 'No email',
-              course: course,
-              degree: student.degree || 'B.Tech',
-              cgpa: student.cgpa || '0.0',
-              walletAddress: student.walletAddress || 'Not set',
-              phone: student.phone || 'Not provided',
-              department: student.department || 'Unknown',
-              program: student.department?.toLowerCase()?.replace(/[&\s]/g, '_') || 'unknown',
-              yearOfAdmission: yearOfAdmission,
-              yearOfPassing: yearOfPassing,
-              currentSemester: student.currentSemester || 1,
-              batch: batch,
-              createdAt: student.createdAt || new Date().toISOString(),
-              eligibilityStatus: student.eligibilityStatus || 'pending',
-              certificates: student.certificates || []
-            };
-          });
-
+      
+      // ✅ IMPROVED: Better response handling
+      if (response.data && response.data.success) {
+        const backendStudents = response.data.students.map(student => {
+          const yearOfPassing = student.yearOfPassing || new Date().getFullYear() + 4;
+          const yearOfAdmission = yearOfPassing - 4;
+          const batch = `${yearOfAdmission}-${yearOfPassing}`;
+          
+          return {
+            _id: student._id,
+            name: student.name || 'Unknown',
+            registerNumber: student.studentId || student.registerNumber, // ✅ ADDED: Fallback
+            email: student.email || 'No email',
+            course: student.course || `${student.degree || 'B.Tech'} in ${student.department || 'Unknown Department'}`,
+            degree: student.degree || 'B.Tech',
+            cgpa: student.cgpa || '0.0',
+            walletAddress: student.walletAddress || 'Not set',
+            phone: student.phone || 'Not provided',
+            department: student.department || 'Unknown',
+            program: student.department?.toLowerCase()?.replace(/[&\s]/g, '_') || 'unknown',
+            yearOfAdmission: yearOfAdmission,
+            yearOfPassing: yearOfPassing,
+            currentSemester: student.currentSemester || 1,
+            batch: batch,
+            createdAt: student.createdAt || new Date().toISOString(),
+            eligibilityStatus: student.eligibilityStatus || 'pending',
+            certificates: student.certificates || []
+          };
+        });
         setStudents(backendStudents);
-        console.log(`✅ AdminDashboard: Loaded ${backendStudents.length} REAL students`);
-        
-        // Debug log to verify data
-        if (backendStudents.length > 0) {
-          console.log('👤 Sample real student data:', backendStudents[0]);
-        }
+      } else {
+        throw new Error('Invalid response format from server');
       }
     } catch (error) {
-      console.error('❌ AdminDashboard: Error fetching students:', error);
-      // Keep empty array if fetch fails
+      console.error('Error fetching students:', error);
+      setError('Failed to load students. Please try again.');
       setStudents([]);
     } finally {
       setLoading(false);
@@ -72,18 +61,57 @@ const AdminDashboard = () => {
   };
 
   useEffect(() => {
-    fetchStudents();
-  }, []);
+    if (isConnected) {
+      fetchStudents();
+    }
+  }, [isConnected]); // ✅ ADDED: Dependency to refetch when wallet connects
 
-  const handleCertificateIssue = (certificateData) => {
-    console.log('🎉 Certificate issued:', certificateData);
-    setRecentCertificate(certificateData);
-    setActiveTab('certificates');
+  const handleCertificateIssue = async (certificateData) => {
+    try {
+      const response = await certificateAPI.createCertificate(certificateData);
+      if (response.data) {
+        setRecentCertificate(response.data);
+        setActiveTab('certificates');
+        // ✅ ADDED: Refresh students to update certificate status
+        fetchStudents();
+      }
+    } catch (error) {
+      console.error('Error issuing certificate:', error);
+      setError('Failed to issue certificate. Please try again.');
+    }
   };
 
-  const handleCertificateApproved = (result) => {
-    console.log('✅ AdminDashboard: Certificate approved:', result);
-    // Refresh students after approval
+  const handleCertificateApproved = async (approvalResult) => {
+    try {
+      console.log('📝 Certificate approved in blockchain:', approvalResult);
+      
+      // ✅ IMPROVED: Update backend with approval status
+      if (approvalResult.studentId) {
+        await studentAPI.approveStudent(approvalResult.studentId, {
+          certificateType: approvalResult.certificateType,
+          transactionHash: approvalResult.transactionHash,
+          ipfsHash: approvalResult.ipfsHash,
+          approvedBy: account,
+          approvedAt: new Date().toISOString()
+        });
+      }
+      
+      // Refresh students list to show updated status
+      fetchStudents();
+      
+      // Show success message
+      setRecentCertificate({
+        message: `Student ${approvalResult.studentName} approved for ${approvalResult.certificateType} certificate`,
+        transactionHash: approvalResult.transactionHash
+      });
+      
+    } catch (error) {
+      console.error('Error updating certificate approval:', error);
+      setError('Certificate approved on blockchain but failed to update backend.');
+    }
+  };
+
+  const refreshStudents = () => {
     fetchStudents();
   };
 
@@ -130,9 +158,20 @@ const AdminDashboard = () => {
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
                 <p className="text-gray-600 mt-1">Manage students and issue academic certificates</p>
-                <p className="text-sm text-green-600 mt-1">
-                  ✅ Loaded {students.length} students from database
-                </p>
+                <div className="flex items-center space-x-4 mt-2">
+                  <p className="text-sm text-green-600">
+                    ✅ Loaded {students.length} students from database
+                  </p>
+                  <button
+                    onClick={refreshStudents}
+                    className="text-sm text-blue-600 hover:text-blue-800 flex items-center"
+                  >
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Refresh
+                  </button>
+                </div>
               </div>
               <div className="mt-4 sm:mt-0">
                 <div className="flex items-center space-x-2 text-sm text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
@@ -143,6 +182,26 @@ const AdminDashboard = () => {
             </div>
           </div>
         </div>
+
+        {/* Error Alert */}
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-red-800">{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="ml-auto text-red-400 hover:text-red-600"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="bg-white rounded-lg shadow-sm mb-6">
@@ -161,6 +220,11 @@ const AdminDashboard = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
                   </svg>
                   <span>Student Management</span>
+                  {students.length > 0 && (
+                    <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                      {students.length}
+                    </span>
+                  )}
                 </div>
               </button>
               <button
@@ -175,7 +239,7 @@ const AdminDashboard = () => {
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                   </svg>
-                  <span>Issue Certificate</span>
+                  <span>Approve Certificates</span>
                 </div>
               </button>
               <button
@@ -199,15 +263,23 @@ const AdminDashboard = () => {
 
         {/* Tab Content */}
         <div>
-          {activeTab === 'students' && <StudentManagement />}
+          {activeTab === 'students' && (
+            <StudentManagement 
+              onStudentsUpdate={fetchStudents} // ✅ ADDED: Callback for updates
+            />
+          )}
           {activeTab === 'issue' && (
             <CertificateForm 
               onSubmit={handleCertificateIssue}
               students={students}
-              onCertificateApproved={handleCertificateApproved}
+              onCertificateApproved={handleCertificateApproved} // ✅ UPDATED: Proper callback
             />
           )}
-          {activeTab === 'certificates' && <CertificateList />}
+          {activeTab === 'certificates' && (
+            <CertificateList 
+              refreshTrigger={recentCertificate} // ✅ ADDED: Auto-refresh when new certificates
+            />
+          )}
         </div>
 
         {/* Recent Certificate Success Alert */}
@@ -220,10 +292,15 @@ const AdminDashboard = () => {
                 </svg>
               </div>
               <div className="ml-3">
-                <h3 className="text-sm font-medium text-green-800">Certificate Issued Successfully!</h3>
+                <h3 className="text-sm font-medium text-green-800">Success!</h3>
                 <p className="mt-1 text-sm text-green-700">
-                  Token ID: {recentCertificate.tokenId}
+                  {recentCertificate.message || `Certificate issued successfully!`}
                 </p>
+                {recentCertificate.transactionHash && (
+                  <p className="text-xs text-green-600 mt-1">
+                    TX: {recentCertificate.transactionHash.slice(0, 10)}...
+                  </p>
+                )}
               </div>
               <button
                 onClick={() => setRecentCertificate(null)}
