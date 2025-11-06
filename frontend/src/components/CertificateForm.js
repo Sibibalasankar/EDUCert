@@ -29,25 +29,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
   const [searchTerm, setSearchTerm] = useState('');
 
   const CONTRACT_ADDRESS = contractConfig.address;
-
-  // ✅ ULTRA-SIMPLE ABI - Only the essential function we need to call
-  const ULTRA_SIMPLE_ABI = [
-    // Only include the function we actually call
-    {
-      "inputs": [
-        {"internalType": "string", "name": "_studentId", "type": "string"},
-        {"internalType": "string", "name": "_studentName", "type": "string"},
-        {"internalType": "string", "name": "_courseName", "type": "string"},
-        {"internalType": "string", "name": "_grade", "type": "string"},
-        {"internalType": "string", "name": "_ipfsHash", "type": "string"},
-        {"internalType": "string", "name": "_certificateType", "type": "string"}
-      ],
-      "name": "allowStudentToMint",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    }
-  ];
+  const CONTRACT_ABI = contractConfig.abi;
 
   const certificateTypes = [
     { value: 'Degree', label: 'Degree Certificate' },
@@ -62,7 +44,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     { value: 'Character', label: 'Character Certificate' }
   ];
 
-  // ✅ Check if certificate exists
+  // ✅ IMPROVED: Check if certificate exists
   const checkIfCertificateExists = (student, certificateType) => {
     if (!student.certificates || student.certificates.length === 0) {
       return false;
@@ -81,14 +63,17 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     return false;
   };
 
-  // ✅ Student filtering
+  // ✅ FIXED: Improved student filtering - matches StudentManagement structure
   useEffect(() => {
     if (searchTerm.length > 1) {
       const filtered = students.filter(student => {
         if (!student) return false;
+
+        // Match the field names from StudentManagement component
         const registerMatch = student.registerNumber?.toLowerCase().includes(searchTerm.toLowerCase());
         const nameMatch = student.name?.toLowerCase().includes(searchTerm.toLowerCase());
         const emailMatch = student.email?.toLowerCase().includes(searchTerm.toLowerCase());
+
         return registerMatch || nameMatch || emailMatch;
       });
       setFilteredStudents(filtered);
@@ -99,7 +84,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     }
   }, [searchTerm, students]);
 
-  // ✅ Student selection
+  // ✅ FIXED: Updated to match StudentManagement data structure
   const handleStudentSelect = (student) => {
     console.log('🎯 Selected student from StudentManagement:', student);
 
@@ -108,6 +93,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
       return;
     }
 
+    // Map the student data from StudentManagement structure to CertificateForm structure
     const newFormData = {
       name: student.name || '',
       registerNumber: student.registerNumber || '',
@@ -137,10 +123,12 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     }));
   };
 
+  // ✅ FIXED: Improved search input handler
   const handleSearchChange = (e) => {
     const value = e.target.value;
     setSearchTerm(value);
 
+    // If search is cleared, clear the form
     if (value === '') {
       setFormData({
         name: '',
@@ -159,23 +147,20 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     }
   };
 
-  // ✅ Connect wallet
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
-        console.log('🔗 Connecting wallet...');
         const accounts = await window.ethereum.request({
           method: 'eth_requestAccounts'
         });
         const address = accounts[0];
-        const provider = new ethers.BrowserProvider(window.ethereum);
+        const provider = new ethers.BrowserProvider(window.ethereum, "any");
         const signer = await provider.getSigner();
 
         setCurrentAccount(address);
         setWalletConnected(true);
         setSigner(signer);
 
-        console.log('✅ Wallet connected:', address);
         return { provider, signer, address };
       } catch (error) {
         console.error('❌ Error connecting wallet:', error);
@@ -202,14 +187,13 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
             method: 'eth_accounts'
           });
           if (accounts.length > 0) {
-            const provider = new ethers.BrowserProvider(window.ethereum);
+            const provider = new ethers.BrowserProvider(window.ethereum, "any");
             const signer = await provider.getSigner();
             const address = accounts[0];
 
             setCurrentAccount(address);
             setWalletConnected(true);
             setSigner(signer);
-            console.log('🔗 Wallet auto-connected:', address);
           }
         } catch (error) {
           console.log('No auto-connection available');
@@ -220,125 +204,169 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     checkWalletConnection();
   }, []);
 
-  // ✅ DIRECT CONTRACT CALL - No ABI checks, just call the function
-  const approveStudentForMinting = async (signer) => {
-    console.log('🎯 Approving student for minting:', formData.registerNumber);
-
+  // Add this function to check admin role
+  const checkAdminRole = async (signer) => {
     try {
-      // Create contract with ULTRA-SIMPLE ABI (only the function we need)
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, ULTRA_SIMPLE_ABI, signer);
-
-      // Generate IPFS hash
-      const ipfsHash = formData.ipfsHash || `Qm${Date.now()}${formData.registerNumber}`;
-
-      console.log('📋 Calling allowStudentToMint with:', {
-        studentId: formData.registerNumber,
-        studentName: formData.name,
-        courseName: formData.course,
-        grade: formData.cgpa,
-        ipfsHash: ipfsHash,
-        certificateType: formData.certificateType
-      });
-
-      // Show user what's happening
-      setResult({
-        type: 'info',
-        message: `Please confirm the transaction in MetaMask to approve ${formData.name} for ${formData.certificateType} certificate.`
-      });
-
-      // ✅ DIRECT FUNCTION CALL - This should trigger MetaMask
-      const tx = await contract.allowStudentToMint(
-        formData.registerNumber,
-        formData.name,
-        formData.course,
-        formData.cgpa,
-        ipfsHash,
-        formData.certificateType
-      );
-
-      console.log('⏳ Transaction sent:', tx.hash);
-      setResult({
-        type: 'info',
-        message: `Transaction submitted! Waiting for confirmation...`,
-        data: { transactionHash: tx.hash }
-      });
-
-      // Wait for confirmation
-      const receipt = await tx.wait();
-      console.log('✅ Approval confirmed:', receipt);
-
-      return {
-        transactionHash: receipt.hash,
-        studentId: formData.registerNumber,
-        studentName: formData.name,
-        certificateType: formData.certificateType,
-        ipfsHash,
-        blockNumber: receipt.blockNumber
-      };
-
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+      const ADMIN_ROLE = await contract.ADMIN_ROLE();
+      const hasAdminRole = await contract.hasRole(ADMIN_ROLE, await signer.getAddress());
+      console.log('🔐 Admin role check:', { hasAdminRole, address: await signer.getAddress() });
+      return hasAdminRole;
     } catch (error) {
-      console.error('❌ Blockchain approval error:', error);
-      
-      // Enhanced error handling
-      if (error.code === 4001 || error.message.includes('user rejected')) {
-        throw new Error('Transaction was rejected by user. Please approve the transaction in MetaMask.');
-      } else if (error.message.includes('insufficient funds')) {
-        throw new Error('Insufficient funds for transaction. Please add Sepolia ETH to your wallet.');
-      } else if (error.message.includes('AccessControlUnauthorizedAccount')) {
-        throw new Error('Your wallet does not have admin privileges. Please use an admin wallet.');
-      } else if (error.message.includes('nonce')) {
-        throw new Error('Transaction nonce error. Please reset your MetaMask account.');
-      } else {
-        throw new Error(`Transaction failed: ${error.reason || error.message}`);
-      }
+      console.error('Error checking admin role:', error);
+      return false;
     }
   };
 
-  // ✅ SIMPLIFIED SUBMIT HANDLER - Skip all checks, just call the function
+
+  // In CertificateForm.js - Update the checkStudentEligibility function:
+
+  const checkStudentEligibility = async (studentId, certificateType) => {
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum, "any");
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+
+      // ✅ FIX: Use the correct function signature with both parameters
+      const [canMint, message] = await contract.canIMint(studentId, certificateType);
+      console.log('🔍 Eligibility check result:', { canMint, message, studentId, certificateType });
+
+      // Also check if student already has this certificate type in backend
+      const student = students.find(s => s.registerNumber === studentId);
+      if (student && checkIfCertificateExists(student, certificateType)) {
+        return {
+          canMint: false,
+          message: `Student already has a ${certificateType} certificate minted`
+        };
+      }
+
+      return { canMint, message };
+    } catch (error) {
+      console.error('Error checking eligibility:', error);
+      // ✅ FIX: Don't block approval if eligibility check fails
+      return { canMint: false, message: 'Eligibility check failed' };
+    }
+  };
+
+const approveStudentForMinting = async (signer) => {
+  console.log('🎯 Approving student for minting:', formData.registerNumber);
+
+  try {
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+    // Check admin role first
+    const hasAdminRole = await checkAdminRole(signer);
+    if (!hasAdminRole) {
+      throw new Error('Wallet does not have admin privileges');
+    }
+
+    // 🔥 Set IPFS Hash
+    const ipfsHash = formData.ipfsHash || `Qm${Date.now()}${formData.registerNumber}`;
+
+    console.log('📋 Calling allowStudentToMint with:', {
+      studentId: formData.registerNumber,
+      studentName: formData.name,
+      courseName: formData.course,
+      grade: formData.cgpa,
+      ipfsHash: ipfsHash,
+      certificateType: formData.certificateType
+    });
+
+    // ✅ CALL THE CORRECT FUNCTION: allowStudentToMint
+    const tx = await contract.allowStudentToMint(
+      formData.registerNumber,           // _studentId
+      formData.name,                     // _studentName
+      formData.course,                   // _courseName
+      formData.cgpa,                     // _grade
+      ipfsHash,                          // _ipfsHash
+      formData.certificateType           // _certificateType
+    );
+
+    console.log('⏳ Transaction sent:', tx.hash);
+    setResult({
+      type: 'info',
+      message: `Transaction submitted... Waiting for confirmation`,
+      data: { transactionHash: tx.hash }
+    });
+
+    const receipt = await tx.wait();
+    console.log('✅ Approval confirmed:', receipt);
+
+    return {
+      transactionHash: receipt.hash,
+      studentId: formData.registerNumber,
+      studentName: formData.name,
+      certificateType: formData.certificateType,
+      ipfsHash
+    };
+
+  } catch (error) {
+    console.error('❌ Blockchain approval error:', error);
+    
+    // Handle specific errors
+    if (error.message.includes('AccessControlUnauthorizedAccount')) {
+      throw new Error('Your wallet does not have permission to approve students. Please use an admin wallet.');
+    } else if (error.message.includes('student already eligible')) {
+      throw new Error(`Student is already approved for ${formData.certificateType} certificate.`);
+    } else if (error.message.includes('user rejected')) {
+      throw new Error('Transaction was rejected by user.');
+    } else {
+      throw new Error(`Blockchain approval failed: ${error.message}`);
+    }
+  }
+};
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setResult(null);
 
     try {
-      console.log('🚀 Starting certificate approval process...');
+      console.log('🚀 Starting certificate approval...');
 
-      // Validate required fields
       if (!formData.name || !formData.registerNumber || !formData.course || !formData.degree || !formData.cgpa) {
-        throw new Error('Please fill in all required fields (Name, Register Number, Course, Degree, CGPA)');
+        throw new Error('Please fill in all required fields');
       }
 
-      // Check if student already has this certificate in backend
+      // Check if student already has this certificate type in backend
       const student = students.find(s => s.registerNumber === formData.registerNumber);
       if (student && checkIfCertificateExists(student, formData.certificateType)) {
-        throw new Error(`Student ${formData.registerNumber} already has a ${formData.certificateType} certificate. Cannot approve again.`);
+        throw new Error(`Student already has a ${formData.certificateType} certificate minted. Cannot approve again.`);
       }
 
-      // Connect wallet if not connected
       let currentSigner = signer;
-      if (!currentSigner || !walletConnected) {
+      if (!currentSigner) {
         const connection = await connectWallet();
         if (!connection) {
-          throw new Error('Wallet connection failed. Please connect your MetaMask wallet.');
+          throw new Error('Wallet connection failed');
         }
         currentSigner = connection.signer;
       }
 
-      // ✅ SKIP ALL CHECKS - Just call the approval function directly
-      console.log('⏩ Skipping eligibility and admin checks, proceeding directly to approval...');
-      
-      const blockchainResult = await approveStudentForMinting(currentSigner);
+      // ✅ FIX: Skip eligibility check if it fails, don't block approval
+      console.log('🔍 Checking current student eligibility...');
+      try {
+        const eligibility = await checkStudentEligibility(formData.registerNumber, formData.certificateType);
+
+        if (eligibility && eligibility.canMint) {
+          throw new Error(`Student is already approved for ${formData.certificateType} certificate minting. They can now mint their own certificate.`);
+        }
+      } catch (eligibilityError) {
+        console.warn('⚠️ Eligibility check failed, proceeding with approval:', eligibilityError.message);
+        // Continue with approval even if eligibility check fails
+      }
+
+      // If student is not eligible or eligibility check failed, proceed with approval
+      const result = await approveStudentForMinting(currentSigner);
 
       // Update backend after successful blockchain approval
       try {
         console.log('🔄 Updating backend with approval status...');
         const backendResponse = await studentAPI.approveStudent(formData.registerNumber, {
           certificateType: formData.certificateType,
-          transactionHash: blockchainResult.transactionHash,
-          ipfsHash: blockchainResult.ipfsHash,
+          transactionHash: result.transactionHash,
+          ipfsHash: result.ipfsHash,
           approvedBy: currentAccount,
-          approvedAt: new Date().toISOString(),
-          status: 'approved'
+          approvedAt: new Date().toISOString()
         });
 
         if (backendResponse.data.success) {
@@ -346,31 +374,31 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         }
       } catch (backendError) {
         console.error('⚠️ Backend update failed:', backendError);
+        // Don't throw error - blockchain transaction succeeded
+        // Just show a warning to the user
         setResult({
           type: 'warning',
           message: `Student approved on blockchain but backend update failed: ${backendError.response?.data?.error || backendError.message}`,
           data: {
-            studentId: blockchainResult.studentId,
-            studentName: blockchainResult.studentName,
-            certificateType: blockchainResult.certificateType,
-            transactionHash: blockchainResult.transactionHash,
+            studentId: result.studentId,
+            studentName: result.studentName,
+            certificateType: result.certificateType,
+            transactionHash: result.transactionHash,
             note: 'Student can mint certificate, but backend record may be incomplete.'
           }
         });
-        return;
+        return; // Exit early to prevent form reset
       }
 
-      // Success result
       setResult({
         type: 'success',
-        message: `Student ${formData.registerNumber} successfully approved for ${formData.certificateType} certificate minting!`,
+        message: `Student successfully approved for ${formData.certificateType} certificate minting!`,
         data: {
-          studentId: blockchainResult.studentId,
-          studentName: blockchainResult.studentName,
-          certificateType: blockchainResult.certificateType,
-          transactionHash: blockchainResult.transactionHash,
-          ipfsHash: blockchainResult.ipfsHash,
-          blockNumber: blockchainResult.blockNumber,
+          studentId: result.studentId,
+          studentName: result.studentName,
+          certificateType: result.certificateType,
+          transactionHash: result.transactionHash,
+          ipfsHash: result.ipfsHash,
           note: 'Student can now mint their certificate using their own wallet.'
         }
       });
@@ -392,9 +420,8 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
       });
       setSearchTerm('');
 
-      // Call callback if provided
       if (onCertificateApproved) {
-        onCertificateApproved(blockchainResult);
+        onCertificateApproved(result);
       }
 
       console.log('🎉 Student approval completed successfully!');
@@ -403,14 +430,14 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
       console.error('❌ Error approving student:', error);
       setResult({
         type: 'error',
-        message: error.message || 'Failed to approve student. Please try again.'
+        message: error.message || 'Failed to approve student'
       });
     } finally {
       setLoading(false);
     }
   };
 
-  // Debug: Log students data
+  // Debug: Log students data to see the structure
   useEffect(() => {
     console.log('📊 Students data in CertificateForm:', students);
   }, [students]);
@@ -449,22 +476,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                   <strong>Step 2:</strong> Select student (auto-fills all fields)<br />
                   <strong>Step 3:</strong> Choose certificate type and approve<br />
                   <strong>Note:</strong> Each student can mint only one of each certificate type
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Transaction Notice */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <div className="flex items-start">
-              <svg className="w-5 h-5 text-yellow-600 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
-              </svg>
-              <div>
-                <h4 className="text-sm font-medium text-yellow-800">Important Notice</h4>
-                <p className="text-sm text-yellow-700 mt-1">
-                  <strong>Direct Contract Call Mode:</strong> Skipping eligibility checks due to ABI issues.<br />
-                  The transaction will proceed directly to MetaMask confirmation.
                 </p>
               </div>
             </div>
@@ -671,12 +682,12 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         <div className={`mt-6 p-4 rounded-md border ${result.type === 'success'
           ? 'bg-green-50 border-green-200 text-green-800'
           : result.type === 'warning'
-            ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
+            ? 'bg-yellow-50 border-yellow-200 text-yellow-800' // ✅ ADD WARNING STYLE
             : 'bg-red-50 border-red-200 text-red-800'
           }`}>
           <div className="flex items-start">
             <div className={`flex-shrink-0 w-5 h-5 mt-0.5 ${result.type === 'success' ? 'text-green-400'
-              : result.type === 'warning' ? 'text-yellow-400'
+              : result.type === 'warning' ? 'text-yellow-400' // ✅ ADD WARNING ICON
                 : 'text-red-400'
               }`}>
               {result.type === 'success' ? '✓' : result.type === 'warning' ? '⚠' : '✗'}
@@ -689,7 +700,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                   <p><strong>Student Name:</strong> {result.data.studentName}</p>
                   <p><strong>Certificate Type:</strong> {result.data.certificateType}</p>
                   <p><strong>Transaction:</strong> {result.data.transactionHash?.slice(0, 10)}...{result.data.transactionHash?.slice(-8)}</p>
-                  {result.data.blockNumber && <p><strong>Block:</strong> {result.data.blockNumber}</p>}
                   {result.data.note && (
                     <p className={`font-medium ${result.type === 'success' ? 'text-green-700' : 'text-yellow-700'
                       }`}>{result.data.note}</p>
