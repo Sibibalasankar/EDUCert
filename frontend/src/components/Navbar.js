@@ -21,8 +21,9 @@ const Navbar = () => {
         <div className="flex justify-between h-16">
           <div className="flex items-center">
             <Link to="/" className="flex-shrink-0 flex items-center">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">E</span>
+              <div className="w-10 h-10   rounded-lg flex items-center justify-center">
+                {/* <span className="text-white font-bold text-sm">E</span> */}
+                <img src="/title.png" alt="EDUCert Logo" className="w-9 h-9" />
               </div>
               <span className="ml-2 text-xl font-bold text-gray-900">EDUCert</span>
             </Link>

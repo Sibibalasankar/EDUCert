@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ethers } from 'ethers';
-import { studentAPI, certificateAPI } from '../services/api';
+import { studentAPI } from '../services/api';
 import { getContract } from '../config/contractConfig';
 import LoadingSpinner from '../components/LoadingSpinner';
+import CertificateCard from './CertificateCard';
 
 const CertificateList = () => {
   const [allCertificates, setAllCertificates] = useState([]);
@@ -13,10 +13,13 @@ const CertificateList = () => {
     minted: 0,
     pending: 0
   });
-  const [filter, setFilter] = useState('all'); // all, approved, minted, pending
+  const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [walletConnected, setWalletConnected] = useState(false);
   const [currentAccount, setCurrentAccount] = useState('');
+  const [selectedCertificate, setSelectedCertificate] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [error, setError] = useState(null);
 
   // Connect wallet
   const connectWallet = async () => {
@@ -30,10 +33,11 @@ const CertificateList = () => {
         return accounts[0];
       } catch (error) {
         console.error('Error connecting wallet:', error);
+        setError('Failed to connect wallet: ' + error.message);
         return null;
       }
     } else {
-      alert('Please install MetaMask!');
+      setError('Please install MetaMask!');
       return null;
     }
   };
@@ -58,51 +62,7 @@ const CertificateList = () => {
     checkWalletConnection();
   }, []);
 
-  // Fetch all certificates from backend
-  const fetchAllCertificates = async () => {
-    try {
-      setLoading(true);
-      
-      // Fetch all students with their certificates
-      const studentsResponse = await studentAPI.getAllStudents();
-      
-      if (studentsResponse.data && studentsResponse.data.success) {
-        const students = studentsResponse.data.students;
-        
-        // Extract all certificates from all students
-        const allCerts = [];
-        
-        students.forEach(student => {
-          if (student.certificates && student.certificates.length > 0) {
-            student.certificates.forEach(cert => {
-              allCerts.push({
-                ...cert,
-                studentName: student.name,
-                studentRegisterNumber: student.registerNumber || student.studentId,
-                studentCourse: student.course,
-                studentDepartment: student.department,
-                studentCGPA: student.cgpa,
-                studentEmail: student.email,
-                studentWallet: student.walletAddress,
-                studentId: student._id
-              });
-            });
-          }
-        });
-
-        // Verify blockchain status for all certificates
-        const verifiedCerts = await verifyBlockchainStatus(allCerts);
-        setAllCertificates(verifiedCerts);
-        updateStats(verifiedCerts);
-      }
-    } catch (error) {
-      console.error('Error fetching certificates:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Verify blockchain status for certificates
+  // ✅ FIXED: Enhanced blockchain status verification with proper minted date
   const verifyBlockchainStatus = async (certificates) => {
     try {
       const contract = await getContract();
@@ -110,38 +70,75 @@ const CertificateList = () => {
 
       for (const cert of certificates) {
         try {
-          // Check if certificate is minted on blockchain
-          const hasMinted = await contract.hasStudentMinted(
-            cert.studentRegisterNumber,
-            cert.certificateType
-          );
-
-          // Get certificate details from blockchain if minted
+          console.log(`🔍 Checking blockchain status for ${cert.studentRegisterNumber} - ${cert.certificateType}`);
+          
+          let hasMinted = false;
           let blockchainData = null;
-          if (hasMinted) {
-            try {
-              blockchainData = await contract.getCertificate(
-                cert.studentRegisterNumber,
-                cert.certificateType
-              );
-            } catch (e) {
-              console.log('Could not fetch certificate details from blockchain:', e.message);
+          let mintedDate = null;
+
+          try {
+            // Try to check if student has minted
+            hasMinted = await contract.hasStudentMinted(
+              cert.studentRegisterNumber,
+              cert.certificateType
+            );
+
+            // If minted, try to get certificate details including issue date
+            if (hasMinted) {
+              try {
+                blockchainData = await contract.getCertificate(
+                  cert.studentRegisterNumber,
+                  cert.certificateType
+                );
+                
+                console.log(`✅ Found on blockchain: ${cert.certificateType} for ${cert.studentRegisterNumber}`, blockchainData);
+
+                // Extract minted date from blockchain data
+                if (blockchainData && blockchainData.issueDate) {
+                  // Convert BigInt timestamp to JavaScript Date
+                  const issueTimestamp = Number(blockchainData.issueDate) * 1000;
+                  mintedDate = new Date(issueTimestamp).toISOString();
+                  console.log(`📅 Blockchain minted date: ${mintedDate} (from timestamp: ${blockchainData.issueDate})`);
+                }
+                
+              } catch (certError) {
+                console.log(`Certificate data not available: ${certError.message}`);
+              }
             }
+          } catch (blockchainError) {
+            console.warn(`Blockchain check failed for ${cert.certificateType}:`, blockchainError.message);
           }
+
+          // Determine effective status
+          let effectiveStatus = cert.status;
+          if (hasMinted) {
+            effectiveStatus = 'minted';
+          } else if (cert.status === 'approved') {
+            effectiveStatus = 'approved';
+          } else {
+            effectiveStatus = 'pending';
+          }
+
+          // Use blockchain minted date if available, otherwise use backend date
+          const finalMintedDate = mintedDate || cert.mintedAt;
 
           updatedCerts.push({
             ...cert,
             blockchainConfirmed: hasMinted,
             blockchainData: blockchainData,
-            // Update status based on blockchain confirmation
-            effectiveStatus: hasMinted ? 'minted' : (cert.status === 'approved' ? 'approved' : 'pending')
+            effectiveStatus: effectiveStatus,
+            mintedAt: finalMintedDate
           });
+
+          console.log(`📋 Certificate ${cert.certificateType} - Status: ${effectiveStatus}, Minted: ${finalMintedDate || 'Not minted'}`);
+
         } catch (error) {
           console.error(`Error verifying ${cert.certificateType} for ${cert.studentRegisterNumber}:`, error);
           updatedCerts.push({
             ...cert,
             blockchainConfirmed: false,
-            effectiveStatus: cert.status
+            effectiveStatus: cert.status || 'pending',
+            mintedAt: cert.mintedAt
           });
         }
       }
@@ -152,8 +149,50 @@ const CertificateList = () => {
       return certificates.map(cert => ({
         ...cert,
         blockchainConfirmed: false,
-        effectiveStatus: cert.status
+        effectiveStatus: cert.status || 'pending',
+        mintedAt: cert.mintedAt
       }));
+    }
+  };
+
+  // Add this function to sync missing minted dates
+  const syncMissingMintedDates = async (certificates) => {
+    try {
+      const contract = await getContract();
+      const updatedCerts = [...certificates];
+
+      for (let i = 0; i < updatedCerts.length; i++) {
+        const cert = updatedCerts[i];
+        
+        // If certificate is minted on blockchain but missing minted date
+        if (cert.blockchainConfirmed && (!cert.mintedAt || cert.mintedAt === 'N/A')) {
+          try {
+            const blockchainData = await contract.getCertificate(
+              cert.studentRegisterNumber,
+              cert.certificateType
+            );
+
+            if (blockchainData && blockchainData.issueDate) {
+              const issueTimestamp = Number(blockchainData.issueDate) * 1000;
+              const mintedDate = new Date(issueTimestamp).toISOString();
+              
+              updatedCerts[i] = {
+                ...cert,
+                mintedAt: mintedDate
+              };
+
+              console.log(`🔄 Synced minted date for ${cert.certificateType}: ${mintedDate}`);
+            }
+          } catch (error) {
+            console.log(`❌ Could not fetch blockchain data for ${cert.certificateType}:`, error.message);
+          }
+        }
+      }
+
+      return updatedCerts;
+    } catch (error) {
+      console.error('Error syncing minted dates:', error);
+      return certificates;
     }
   };
 
@@ -165,12 +204,105 @@ const CertificateList = () => {
     const pending = certificates.filter(c => c.effectiveStatus === 'pending').length;
 
     setStats({ total, approved, minted, pending });
+    console.log(`📊 Stats updated - Total: ${total}, Approved: ${approved}, Minted: ${minted}, Pending: ${pending}`);
   };
 
-  // Load data on component mount
+  // ✅ FIXED: Wrap fetchAllCertificates in useCallback to prevent infinite re-renders
+  const fetchAllCertificates = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      console.log('🔄 Starting certificate fetch...');
+      
+      const studentsResponse = await studentAPI.getAllStudents();
+      console.log('📊 Students response:', studentsResponse);
+
+      if (studentsResponse.data && studentsResponse.data.success) {
+        const students = studentsResponse.data.students;
+        console.log(`👥 Found ${students.length} students`);
+
+        const allCerts = [];
+        
+        students.forEach(student => {
+          console.log(`📝 Processing student: ${student.name} (${student.registerNumber || student.studentId})`);
+          
+          if (student.certificates && student.certificates.length > 0) {
+            console.log(`📜 Found ${student.certificates.length} certificates for ${student.name}`);
+            
+            student.certificates.forEach(cert => {
+              console.log(`🎓 Certificate: ${cert.certificateType}, Status: ${cert.status}, Minted: ${cert.mintedAt || 'Not minted'}`);
+              
+              allCerts.push({
+                ...cert,
+                studentName: student.name,
+                studentRegisterNumber: student.registerNumber || student.studentId,
+                studentCourse: student.course,
+                studentDepartment: student.department,
+                studentCGPA: student.cgpa,
+                studentEmail: student.email,
+                studentWallet: student.walletAddress,
+                studentId: student._id,
+                studentInfo: {
+                  name: student.name,
+                  registerNumber: student.registerNumber || student.studentId,
+                  course: student.course,
+                  cgpa: student.cgpa,
+                  department: student.department,
+                  email: student.email,
+                  walletAddress: student.walletAddress
+                }
+              });
+            });
+          } else {
+            console.log(`❌ No certificates found for ${student.name}`);
+          }
+        });
+
+        console.log(`📋 Total certificates collected: ${allCerts.length}`);
+
+        if (allCerts.length > 0) {
+          const verifiedCerts = await verifyBlockchainStatus(allCerts);
+          console.log(`✅ Verified ${verifiedCerts.length} certificates with blockchain`);
+          
+          const syncedCerts = await syncMissingMintedDates(verifiedCerts);
+          console.log(`🔄 Synced minted dates for certificates`);
+          
+          setAllCertificates(syncedCerts);
+          updateStats(syncedCerts);
+        } else {
+          console.log('⚠️ No certificates found in any student records');
+          setAllCertificates([]);
+          updateStats([]);
+        }
+      } else {
+        console.error('❌ Failed to fetch students:', studentsResponse);
+        setError('Failed to load student data from server');
+        setAllCertificates([]);
+        updateStats([]);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching certificates:', error);
+      setError('Failed to load certificates: ' + error.message);
+      setAllCertificates([]);
+      updateStats([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []); // Empty dependency array since we don't use any external variables
+
+  // ✅ FIXED: Load data on component mount with proper dependencies
   useEffect(() => {
-    fetchAllCertificates();
-  }, []);
+    if (walletConnected) {
+      fetchAllCertificates();
+    }
+  }, [walletConnected, fetchAllCertificates]); // Include fetchAllCertificates in dependencies
+
+  // ✅ FIXED: Auto-fetch when wallet connects with proper dependencies
+  useEffect(() => {
+    if (walletConnected && allCertificates.length === 0) {
+      fetchAllCertificates();
+    }
+  }, [walletConnected, allCertificates.length, fetchAllCertificates]); // Proper dependencies
 
   // Filter certificates based on selected filter and search term
   const filteredCertificates = allCertificates.filter(cert => {
@@ -183,29 +315,79 @@ const CertificateList = () => {
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       return (
-        cert.studentName?.toLowerCase().includes(term) ||
-        cert.studentRegisterNumber?.toLowerCase().includes(term) ||
-        cert.certificateType?.toLowerCase().includes(term) ||
-        cert.studentCourse?.toLowerCase().includes(term)
+        (cert.studentName?.toLowerCase().includes(term)) ||
+        (cert.studentRegisterNumber?.toLowerCase().includes(term)) ||
+        (cert.certificateType?.toLowerCase().includes(term)) ||
+        (cert.studentCourse?.toLowerCase().includes(term))
       );
     }
     
     return true;
   });
 
+  // View certificate details
+  const viewCertificate = (certificate) => {
+    setSelectedCertificate(certificate);
+    setIsModalOpen(true);
+  };
+
+  // Close modal
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setSelectedCertificate(null);
+  };
+
   // Refresh data
   const refreshData = async () => {
     await fetchAllCertificates();
   };
 
-  // Format date
+  // ✅ FIXED: Enhanced date formatting
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
+    if (!dateString || dateString === 'N/A' || dateString === 'Invalid Date') {
+      return 'Not minted';
+    }
+    
+    try {
+      const date = new Date(dateString);
+      
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        console.warn(`Invalid date string: ${dateString}`);
+        return 'Invalid date';
+      }
+      
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      console.error('Error formatting date:', error, dateString);
+      return 'Date error';
+    }
+  };
+
+  // Add this function to manually sync all minted dates
+  const syncAllMintedDates = async () => {
+    try {
+      setLoading(true);
+      console.log('🔄 Starting manual minted date sync...');
+      
+      const syncedCerts = await syncMissingMintedDates(allCertificates);
+      setAllCertificates(syncedCerts);
+      updateStats(syncedCerts);
+      
+      console.log('✅ Manual minted date sync completed');
+      setError(null);
+    } catch (error) {
+      console.error('❌ Manual sync failed:', error);
+      setError('Failed to sync minted dates: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Get status badge color
@@ -245,6 +427,11 @@ const CertificateList = () => {
           >
             Connect Admin Wallet
           </button>
+          {error && (
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-700 text-sm">{error}</p>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -258,7 +445,7 @@ const CertificateList = () => {
           <div className="bg-white rounded-lg shadow-sm p-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
               <div className="flex-1">
-                <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
+                <h1 className="text-2xl font-bold text-gray-900">Certificate Dashboard</h1>
                 <p className="text-gray-600 mt-1">
                   Manage and monitor all student certificates
                 </p>
@@ -286,17 +473,49 @@ const CertificateList = () => {
                 </div>
                 <button
                   onClick={refreshData}
-                  className="text-sm text-blue-600 hover:text-blue-800 flex items-center justify-center"
+                  disabled={loading}
+                  className="text-sm text-blue-600 hover:text-blue-800 flex items-center justify-center disabled:opacity-50"
                 >
                   <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  Refresh Data
+                  {loading ? 'Refreshing...' : 'Refresh Data'}
+                </button>
+                <button
+                  onClick={syncAllMintedDates}
+                  disabled={loading}
+                  className="text-sm text-purple-600 hover:text-purple-800 flex items-center justify-center disabled:opacity-50"
+                >
+                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {loading ? 'Syncing Dates...' : 'Sync Minted Dates'}
                 </button>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 text-red-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div>
+                <p className="text-red-800 font-medium">Error Loading Data</p>
+                <p className="text-red-700 text-sm mt-1">{error}</p>
+                <button
+                  onClick={refreshData}
+                  className="mt-2 text-red-600 hover:text-red-800 text-sm underline"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -437,11 +656,17 @@ const CertificateList = () => {
                 </svg>
               </div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">No Certificates Found</h3>
-              <p className="text-gray-600">
+              <p className="text-gray-600 mb-4">
                 {searchTerm || filter !== 'all'
                   ? 'No certificates match your current filters.'
                   : 'No certificates have been created yet.'}
               </p>
+              <button
+                onClick={refreshData}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+              >
+                Refresh Data
+              </button>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -461,7 +686,7 @@ const CertificateList = () => {
                       Dates
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Blockchain
+                      Actions
                     </th>
                   </tr>
                 </thead>
@@ -471,24 +696,24 @@ const CertificateList = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">
-                            {certificate.studentName}
+                            {certificate.studentName || 'Unknown Student'}
                           </div>
                           <div className="text-sm text-gray-500">
-                            {certificate.studentRegisterNumber}
+                            {certificate.studentRegisterNumber || 'No ID'}
                           </div>
                           <div className="text-sm font-semibold text-blue-600 mt-1">
-                            {certificate.certificateType}
+                            {certificate.certificateType || 'Unknown Certificate'}
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{certificate.studentCourse}</div>
-                        <div className="text-sm text-gray-500">{certificate.studentDepartment}</div>
-                        <div className="text-sm text-gray-500">CGPA: {certificate.studentCGPA}</div>
+                        <div className="text-sm text-gray-900">{certificate.studentCourse || 'No Course'}</div>
+                        <div className="text-sm text-gray-500">{certificate.studentDepartment || 'No Department'}</div>
+                        <div className="text-sm text-gray-500">CGPA: {certificate.studentCGPA || 'N/A'}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(certificate.effectiveStatus)}`}>
-                          {getStatusIcon(certificate.effectiveStatus)} {certificate.effectiveStatus?.toUpperCase()}
+                          {getStatusIcon(certificate.effectiveStatus)} {certificate.effectiveStatus?.toUpperCase() || 'UNKNOWN'}
                         </span>
                         {certificate.blockchainConfirmed && (
                           <div className="text-xs text-green-600 mt-1 flex items-center">
@@ -501,20 +726,24 @@ const CertificateList = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div>Approved: {formatDate(certificate.approvedAt)}</div>
-                        <div>Minted: {formatDate(certificate.mintedAt) || 'Not minted'}</div>
+                        <div>Minted: {formatDate(certificate.mintedAt)}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {certificate.transactionHash ? (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button
+                          onClick={() => viewCertificate(certificate)}
+                          className="text-blue-600 hover:text-blue-900 bg-blue-50 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors"
+                        >
+                          View Details
+                        </button>
+                        {certificate.transactionHash && (
                           <a
                             href={`https://sepolia.etherscan.io/tx/${certificate.transactionHash}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 underline"
+                            className="ml-2 text-green-600 hover:text-green-900 bg-green-50 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-100 transition-colors inline-block"
                           >
-                            View TX
+                            Etherscan
                           </a>
-                        ) : (
-                          'No transaction'
                         )}
                       </td>
                     </tr>
@@ -532,6 +761,41 @@ const CertificateList = () => {
           </div>
         )}
       </div>
+
+      {/* Certificate Details Modal */}
+      {isModalOpen && selectedCertificate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Certificate Details
+              </h3>
+              <button
+                onClick={closeModal}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6">
+              <CertificateCard 
+                certificate={selectedCertificate}
+                studentInfo={selectedCertificate.studentInfo}
+              />
+            </div>
+            <div className="flex justify-end p-6 border-t border-gray-200">
+              <button
+                onClick={closeModal}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

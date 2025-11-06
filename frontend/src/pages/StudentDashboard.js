@@ -15,8 +15,7 @@ const StudentDashboard = () => {
   const [minting, setMinting] = useState({});
   const [mintResult, setMintResult] = useState(null);
 
-  // Check blockchain status for all certificates
-  // Check blockchain status for all certificates - FIXED VERSION
+  // ✅ FIXED: Check blockchain status for all certificates
   const checkBlockchainStatus = useCallback(async (certificates, registerNumber) => {
     if (!registerNumber) {
       console.log('No register number available for blockchain check');
@@ -29,23 +28,52 @@ const StudentDashboard = () => {
 
       for (const certificate of certificates) {
         try {
-          // Check if certificate is already minted on blockchain using hasStudentMinted
+          // Check if certificate is already minted on blockchain
           const hasMinted = await contract.hasStudentMinted(
             registerNumber,
             certificate.certificateType
           );
 
           if (hasMinted) {
-            // Create deterministic token ID since contract doesn't have token IDs
-            const tokenId = `cert-${registerNumber}-${certificate.certificateType}`;
+            try {
+              // ✅ FIXED: Get actual minting details from blockchain
+              const certificateData = await contract.getCertificate(
+                registerNumber,
+                certificate.certificateType
+              );
 
-            // If minted on blockchain but not updated in backend, update it
-            updatedCertificates.push({
-              ...certificate,
-              status: 'minted',
-              blockchainConfirmed: true,
-              tokenId: tokenId
-            });
+              // Convert BigInt timestamp to Date
+              const issueDate = certificateData.issueDate ? 
+                new Date(Number(certificateData.issueDate) * 1000).toISOString() : 
+                new Date().toISOString();
+
+              const tokenId = `cert-${registerNumber}-${certificate.certificateType}`;
+
+              updatedCertificates.push({
+                ...certificate,
+                status: 'minted',
+                blockchainConfirmed: true,
+                tokenId: tokenId,
+                // ✅ FIXED: Use blockchain issue date if available
+                mintedAt: issueDate,
+                blockNumber: certificateData.issueDate ? Number(certificateData.issueDate) : null,
+                // Update from blockchain data
+                studentName: certificateData.studentName || certificate.studentName,
+                courseName: certificateData.courseName || certificate.courseName,
+                grade: certificateData.grade || certificate.grade,
+                ipfsHash: certificateData.ipfsHash || certificate.ipfsHash
+              });
+            } catch (certError) {
+              console.log(`Could not fetch certificate details for ${certificate.certificateType}:`, certError.message);
+              // Fallback if we can't get certificate details
+              updatedCertificates.push({
+                ...certificate,
+                status: 'minted',
+                blockchainConfirmed: true,
+                tokenId: `cert-${registerNumber}-${certificate.certificateType}`,
+                mintedAt: new Date().toISOString() // Fallback date
+              });
+            }
           } else {
             updatedCertificates.push(certificate);
           }
@@ -62,20 +90,30 @@ const StudentDashboard = () => {
     }
   }, []);
 
-  // Sync backend with blockchain state
+  // ✅ FIXED: Sync backend with blockchain state
   const syncBackendWithBlockchain = useCallback(async (certificates) => {
     try {
       for (const certificate of certificates) {
         // If certificate is minted on blockchain but backend doesn't know it
         if (certificate.blockchainConfirmed && certificate.status !== 'minted') {
           try {
-            await certificateAPI.updateCertificate(certificate._id, {
+            const updateData = {
               status: 'minted',
               blockchainConfirmed: true,
               tokenId: certificate.tokenId,
-              mintedAt: new Date().toISOString()
-            });
-            console.log(`Updated backend for ${certificate.certificateType}`);
+              // ✅ FIXED: Ensure mintedAt is properly set
+              mintedAt: certificate.mintedAt || new Date().toISOString(),
+              blockNumber: certificate.blockNumber,
+              transactionHash: certificate.transactionHash
+            };
+
+            // Remove undefined values
+            Object.keys(updateData).forEach(key => 
+              updateData[key] === undefined && delete updateData[key]
+            );
+
+            await certificateAPI.updateCertificate(certificate._id, updateData);
+            console.log(`✅ Updated backend for ${certificate.certificateType} with mintedAt: ${updateData.mintedAt}`);
           } catch (updateError) {
             console.log(`Failed to update backend for ${certificate.certificateType}:`, updateError.message);
           }
@@ -191,70 +229,37 @@ const StudentDashboard = () => {
     }
   };
 
-  // Get token ID for a minted certificate
-  // Get token ID for a minted certificate - FIXED VERSION
-  const getTokenIdForCertificate = async (certificate) => {
-    if (!studentInfo?.registerNumber) {
-      return `cert-${certificate._id}`;
-    }
-
+  // ✅ FIXED: Update certificate status with proper issued date
+  const updateCertificateStatus = async (certificateId, transactionHash, blockNumber, tokenId, blockchainIssueDate = null) => {
     try {
-      const contract = await getContract();
-
-      // Since your contract doesn't use traditional token IDs, create a deterministic ID
-      // Based on student ID and certificate type
-      const tokenId = `cert-${studentInfo.registerNumber}-${certificate.certificateType}`;
-
-      // Verify the certificate actually exists on blockchain
-      try {
-        const certificateData = await contract.getCertificate(
-          studentInfo.registerNumber,
-          certificate.certificateType
-        );
-
-        if (certificateData && certificateData.isMinted) {
-          console.log(`✅ Certificate found on blockchain: ${tokenId}`);
-          return tokenId;
-        }
-      } catch (certError) {
-        console.log(`Certificate data not available for ${certificate.certificateType}:`, certError.message);
-      }
-
-      // Alternative check using hasStudentMinted
-      const hasMinted = await contract.hasStudentMinted(
-        studentInfo.registerNumber,
-        certificate.certificateType
-      );
-
-      if (hasMinted) {
-        console.log(`✅ Student has minted ${certificate.certificateType}: ${tokenId}`);
-        return tokenId;
-      }
-
-      // If not found on blockchain but marked as minted in backend, still return the ID
-      console.log(`⚠️ Certificate not found on blockchain, using fallback ID: ${tokenId}`);
-      return tokenId;
-
-    } catch (error) {
-      console.error('Error in getTokenIdForCertificate:', error);
-      // Fallback token ID
-      return `cert-${studentInfo.registerNumber}-${certificate.certificateType}-fallback`;
-    }
-  };
-
-  const updateCertificateStatus = async (certificateId, transactionHash, blockNumber, tokenId) => {
-    try {
-      const response = await certificateAPI.updateCertificate(certificateId, {
+      // ✅ FIXED: Use blockchain issue date if available, otherwise use current time
+      const mintedAt = blockchainIssueDate || new Date().toISOString();
+      
+      const updateData = {
         status: 'minted',
         transactionHash: transactionHash,
         blockNumber: blockNumber,
         blockchainConfirmed: true,
         tokenId: tokenId,
-        mintedAt: new Date().toISOString()
-      });
+        mintedAt: mintedAt // ✅ This ensures issued date is set
+      };
+
+      // Remove undefined values
+      Object.keys(updateData).forEach(key => 
+        updateData[key] === undefined && delete updateData[key]
+      );
+
+      console.log(`🔄 Updating backend certificate ${certificateId} with:`, updateData);
+      
+      const response = await certificateAPI.updateCertificate(certificateId, updateData);
+      
+      if (response.data) {
+        console.log(`✅ Backend updated successfully with mintedAt: ${mintedAt}`);
+      }
+      
       return response.data;
     } catch (error) {
-      console.log('Certificate status update failed (non-critical):', error.message);
+      console.error('❌ Certificate status update failed:', error.message);
       return null;
     }
   };
@@ -326,7 +331,7 @@ const StudentDashboard = () => {
     }
   };
 
-  // Main mint certificate function
+  // ✅ FIXED: Main mint certificate function with proper issued date handling
   const mintCertificate = async (certificate) => {
     if (!studentInfo?.registerNumber) {
       setMintResult({
@@ -417,29 +422,45 @@ const StudentDashboard = () => {
       const receipt = await tx.wait();
 
       if (receipt.status === 1) {
-        // Get the token ID from the transaction events or query the contract
+        // ✅ FIXED: Get the actual blockchain issue date
+        let blockchainIssueDate = null;
         let tokenId;
+
         try {
+          // Get certificate data from blockchain to get the actual issue date
+          const certificateData = await contract.getCertificate(
+            studentInfo.registerNumber,
+            certificate.certificateType
+          );
+
+          if (certificateData && certificateData.issueDate) {
+            // Convert blockchain timestamp to ISO string
+            blockchainIssueDate = new Date(Number(certificateData.issueDate) * 1000).toISOString();
+            console.log(`📅 Blockchain issue date: ${blockchainIssueDate}`);
+          }
+
           tokenId = await getTokenIdForCertificate(certificate);
         } catch (tokenError) {
-          console.error('Error fetching token ID:', tokenError);
+          console.error('Error fetching certificate data:', tokenError);
           tokenId = `cert-${studentInfo.registerNumber}-${certificate.certificateType}-${receipt.blockNumber}`;
+          blockchainIssueDate = new Date().toISOString(); // Fallback to current time
         }
 
-        // Update UI immediately - remove from approved and add to minted
-        setApprovedCertificates(prev =>
-          prev.filter(c => c._id !== certificate._id)
-        );
-
+        // ✅ FIXED: Create minted data with proper issued date
         const mintedData = {
           ...certificate,
           status: "minted",
-          mintedAt: new Date().toISOString(),
+          mintedAt: blockchainIssueDate || new Date().toISOString(), // Use blockchain date first
           transactionHash: tx.hash,
           blockNumber: receipt.blockNumber,
           blockchainConfirmed: true,
           tokenId: tokenId,
         };
+
+        // Update UI immediately - remove from approved and add to minted
+        setApprovedCertificates(prev =>
+          prev.filter(c => c._id !== certificate._id)
+        );
 
         setMintedCertificates(prev => [...prev, mintedData]);
 
@@ -449,10 +470,17 @@ const StudentDashboard = () => {
           transactionHash: tx.hash,
           blockNumber: receipt.blockNumber,
           tokenId: tokenId,
+          issuedDate: blockchainIssueDate || new Date().toISOString()
         });
 
-        // Try to update backend (non-blocking)
-        updateCertificateStatus(certificate._id, tx.hash, receipt.blockNumber, tokenId);
+        // ✅ FIXED: Update backend with proper issued date
+        await updateCertificateStatus(
+          certificate._id, 
+          tx.hash, 
+          receipt.blockNumber, 
+          tokenId, 
+          blockchainIssueDate // Pass blockchain issue date
+        );
 
         // Refresh data to sync with backend
         setTimeout(() => {
@@ -490,13 +518,13 @@ const StudentDashboard = () => {
           ...certificate,
           status: "minted",
           blockchainConfirmed: true,
-          mintedAt: new Date().toISOString(),
+          mintedAt: new Date().toISOString(), // Set issued date
           tokenId: tokenId,
         };
 
         setMintedCertificates(prev => [...prev, alreadyMintedData]);
 
-        // Also update backend
+        // Also update backend with issued date
         updateCertificateStatus(certificate._id, null, null, tokenId);
       }
 
@@ -507,6 +535,51 @@ const StudentDashboard = () => {
       });
     } finally {
       setMinting((prev) => ({ ...prev, [certificate._id]: false }));
+    }
+  };
+
+  // Get token ID for a minted certificate
+  const getTokenIdForCertificate = async (certificate) => {
+    if (!studentInfo?.registerNumber) {
+      return `cert-${certificate._id}`;
+    }
+
+    try {
+      const contract = await getContract();
+      const tokenId = `cert-${studentInfo.registerNumber}-${certificate.certificateType}`;
+
+      // Verify the certificate actually exists on blockchain
+      try {
+        const certificateData = await contract.getCertificate(
+          studentInfo.registerNumber,
+          certificate.certificateType
+        );
+
+        if (certificateData && certificateData.isMinted) {
+          console.log(`✅ Certificate found on blockchain: ${tokenId}`);
+          return tokenId;
+        }
+      } catch (certError) {
+        console.log(`Certificate data not available for ${certificate.certificateType}:`, certError.message);
+      }
+
+      // Alternative check using hasStudentMinted
+      const hasMinted = await contract.hasStudentMinted(
+        studentInfo.registerNumber,
+        certificate.certificateType
+      );
+
+      if (hasMinted) {
+        console.log(`✅ Student has minted ${certificate.certificateType}: ${tokenId}`);
+        return tokenId;
+      }
+
+      console.log(`⚠️ Certificate not found on blockchain, using fallback ID: ${tokenId}`);
+      return tokenId;
+
+    } catch (error) {
+      console.error('Error in getTokenIdForCertificate:', error);
+      return `cert-${studentInfo.registerNumber}-${certificate.certificateType}-fallback`;
     }
   };
 
@@ -558,8 +631,7 @@ const StudentDashboard = () => {
   // Handle certificate verification
   const handleVerifyCertificate = (certificate) => {
     console.log('Verifying certificate:', certificate._id);
-    // You can implement verification logic here or open a modal
-    alert(`Verifying certificate: ${certificate.certificateType}\nToken ID: ${certificate.tokenId}`);
+    alert(`Verifying certificate: ${certificate.certificateType}\nToken ID: ${certificate.tokenId}\nIssued: ${certificate.mintedAt ? new Date(certificate.mintedAt).toLocaleDateString() : 'Unknown'}`);
   };
 
   if (!isConnected) {
