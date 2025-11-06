@@ -3,6 +3,66 @@ import { ethers } from 'ethers';
 import { contractConfig } from '../config/contractConfig';
 import { studentAPI } from '../services/api';
 
+// ✅ SIMPLIFIED ABI for production - Only essential functions
+const SIMPLIFIED_ABI = [
+  // ADMIN_ROLE function
+  {
+    "inputs": [],
+    "name": "ADMIN_ROLE",
+    "outputs": [{"internalType": "bytes32", "name": "", "type": "bytes32"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  // DEFAULT_ADMIN_ROLE function
+  {
+    "inputs": [],
+    "name": "DEFAULT_ADMIN_ROLE",
+    "outputs": [{"internalType": "bytes32", "name": "", "type": "bytes32"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  // hasRole function
+  {
+    "inputs": [
+      {"internalType": "bytes32", "name": "role", "type": "bytes32"},
+      {"internalType": "address", "name": "account", "type": "address"}
+    ],
+    "name": "hasRole",
+    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  // canIMint function
+  {
+    "inputs": [
+      {"internalType": "string", "name": "_studentId", "type": "string"},
+      {"internalType": "string", "name": "_certificateType", "type": "string"}
+    ],
+    "name": "canIMint",
+    "outputs": [
+      {"internalType": "bool", "name": "", "type": "bool"},
+      {"internalType": "string", "name": "", "type": "string"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  // allowStudentToMint function
+  {
+    "inputs": [
+      {"internalType": "string", "name": "_studentId", "type": "string"},
+      {"internalType": "string", "name": "_studentName", "type": "string"},
+      {"internalType": "string", "name": "_courseName", "type": "string"},
+      {"internalType": "string", "name": "_grade", "type": "string"},
+      {"internalType": "string", "name": "_ipfsHash", "type": "string"},
+      {"internalType": "string", "name": "_certificateType", "type": "string"}
+    ],
+    "name": "allowStudentToMint",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+];
+
 const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -29,7 +89,15 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
   const [searchTerm, setSearchTerm] = useState('');
 
   const CONTRACT_ADDRESS = contractConfig.address;
-  const CONTRACT_ABI = contractConfig.abi;
+
+  // ✅ ENVIRONMENT DETECTION
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  
+  // ✅ USE SIMPLIFIED ABI IN PRODUCTION, FULL ABI IN DEVELOPMENT
+  const CONTRACT_ABI = (isProduction && !isLocalhost) ? SIMPLIFIED_ABI : contractConfig.abi;
+
+  console.log('🌍 Environment:', { isProduction, isLocalhost, usingSimpleABI: (isProduction && !isLocalhost) });
 
   const certificateTypes = [
     { value: 'Degree', label: 'Degree Certificate' },
@@ -63,13 +131,12 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     return false;
   };
 
-  // ✅ FIXED: Improved student filtering - matches StudentManagement structure
+  // ✅ FIXED: Improved student filtering
   useEffect(() => {
     if (searchTerm.length > 1) {
       const filtered = students.filter(student => {
         if (!student) return false;
 
-        // Match the field names from StudentManagement component
         const registerMatch = student.registerNumber?.toLowerCase().includes(searchTerm.toLowerCase());
         const nameMatch = student.name?.toLowerCase().includes(searchTerm.toLowerCase());
         const emailMatch = student.email?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -84,7 +151,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     }
   }, [searchTerm, students]);
 
-  // ✅ FIXED: Updated to match StudentManagement data structure
+  // ✅ FIXED: Student selection
   const handleStudentSelect = (student) => {
     console.log('🎯 Selected student from StudentManagement:', student);
 
@@ -93,7 +160,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
       return;
     }
 
-    // Map the student data from StudentManagement structure to CertificateForm structure
     const newFormData = {
       name: student.name || '',
       registerNumber: student.registerNumber || '',
@@ -128,7 +194,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     const value = e.target.value;
     setSearchTerm(value);
 
-    // If search is cleared, clear the form
     if (value === '') {
       setFormData({
         name: '',
@@ -147,20 +212,23 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     }
   };
 
+  // ✅ FIXED: Enhanced wallet connection
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
+        console.log('🔗 Connecting wallet...');
         const accounts = await window.ethereum.request({
           method: 'eth_requestAccounts'
         });
         const address = accounts[0];
-        const provider = new ethers.BrowserProvider(window.ethereum, "any");
+        const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
 
         setCurrentAccount(address);
         setWalletConnected(true);
         setSigner(signer);
 
+        console.log('✅ Wallet connected:', address);
         return { provider, signer, address };
       } catch (error) {
         console.error('❌ Error connecting wallet:', error);
@@ -187,13 +255,14 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
             method: 'eth_accounts'
           });
           if (accounts.length > 0) {
-            const provider = new ethers.BrowserProvider(window.ethereum, "any");
+            const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
             const address = accounts[0];
 
             setCurrentAccount(address);
             setWalletConnected(true);
             setSigner(signer);
+            console.log('🔗 Wallet auto-connected:', address);
           }
         } catch (error) {
           console.log('No auto-connection available');
@@ -204,169 +273,249 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     checkWalletConnection();
   }, []);
 
-  // Add this function to check admin role
+  // ✅ FIXED: Enhanced contract creation with fallback
+  const getContract = async (signerOrProvider) => {
+    try {
+      console.log('🔄 Creating contract instance...');
+      
+      // Try with selected ABI first
+      try {
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signerOrProvider);
+        console.log('✅ Contract created successfully');
+        return contract;
+      } catch (error) {
+        console.warn('⚠️ Primary ABI failed, trying simplified ABI:', error.message);
+        
+        // Fallback to simplified ABI
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, SIMPLIFIED_ABI, signerOrProvider);
+        console.log('✅ Contract created with simplified ABI');
+        return contract;
+      }
+    } catch (error) {
+      console.error('❌ All contract creation attempts failed:', error);
+      throw new Error(`Contract connection failed: ${error.message}`);
+    }
+  };
+
+  // ✅ FIXED: Enhanced admin role check with fallbacks
   const checkAdminRole = async (signer) => {
     try {
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-      const ADMIN_ROLE = await contract.ADMIN_ROLE();
-      const hasAdminRole = await contract.hasRole(ADMIN_ROLE, await signer.getAddress());
-      console.log('🔐 Admin role check:', { hasAdminRole, address: await signer.getAddress() });
-      return hasAdminRole;
+      console.log('🔐 Checking admin role...');
+      const contract = await getContract(signer);
+      
+      let adminRole;
+      const userAddress = await signer.getAddress();
+      
+      // Try ADMIN_ROLE first
+      try {
+        adminRole = await contract.ADMIN_ROLE();
+        console.log('📋 ADMIN_ROLE bytes:', adminRole);
+      } catch (adminError) {
+        console.warn('⚠️ ADMIN_ROLE call failed, trying DEFAULT_ADMIN_ROLE:', adminError.message);
+        
+        // Try DEFAULT_ADMIN_ROLE as fallback
+        try {
+          adminRole = await contract.DEFAULT_ADMIN_ROLE();
+          console.log('📋 DEFAULT_ADMIN_ROLE bytes:', adminRole);
+        } catch (defaultError) {
+          console.error('❌ Both ADMIN_ROLE and DEFAULT_ADMIN_ROLE failed');
+          
+          // Last resort: try to calculate ADMIN_ROLE manually
+          adminRole = ethers.keccak256(ethers.toUtf8Bytes("ADMIN"));
+          console.log('📋 Using calculated ADMIN_ROLE:', adminRole);
+        }
+      }
+
+      // Check if we have a valid admin role
+      if (!adminRole || adminRole === '0x') {
+        console.error('❌ Invalid admin role received');
+        return false;
+      }
+
+      const hasRole = await contract.hasRole(adminRole, userAddress);
+      console.log('👤 Admin role check result:', { hasRole, address: userAddress });
+      
+      return hasRole;
     } catch (error) {
-      console.error('Error checking admin role:', error);
+      console.error('❌ Error in admin role check:', error);
       return false;
     }
   };
 
-
-  // In CertificateForm.js - Update the checkStudentEligibility function:
-
+  // ✅ FIXED: Enhanced eligibility check with production fallbacks
   const checkStudentEligibility = async (studentId, certificateType) => {
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum, "any");
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
-
-      // ✅ FIX: Use the correct function signature with both parameters
-      const [canMint, message] = await contract.canIMint(studentId, certificateType);
-      console.log('🔍 Eligibility check result:', { canMint, message, studentId, certificateType });
-
-      // Also check if student already has this certificate type in backend
-      const student = students.find(s => s.registerNumber === studentId);
-      if (student && checkIfCertificateExists(student, certificateType)) {
-        return {
-          canMint: false,
-          message: `Student already has a ${certificateType} certificate minted`
-        };
+      console.log('🔍 Checking eligibility for:', { studentId, certificateType });
+      
+      if (!window.ethereum) {
+        throw new Error('MetaMask not installed');
       }
 
-      return { canMint, message };
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const contract = await getContract(provider);
+
+      try {
+        // Try direct call first
+        const result = await contract.canIMint(studentId, certificateType);
+        console.log('✅ Eligibility check result:', result);
+        
+        return { canMint: result[0], message: result[1] };
+      } catch (callError) {
+        console.warn('⚠️ Direct canIMint call failed, trying staticCall:', callError.message);
+        
+        // Try staticCall as fallback
+        const result = await contract.canIMint.staticCall(studentId, certificateType);
+        console.log('✅ Eligibility check result (staticCall):', result);
+        
+        return { canMint: result[0], message: result[1] };
+      }
     } catch (error) {
-      console.error('Error checking eligibility:', error);
-      // ✅ FIX: Don't block approval if eligibility check fails
-      return { canMint: false, message: 'Eligibility check failed' };
+      console.error('❌ All eligibility checks failed:', error);
+      
+      // Don't block the process - return a safe default
+      return { 
+        canMint: false, 
+        message: 'Eligibility check unavailable - proceeding with manual approval' 
+      };
     }
   };
 
-const approveStudentForMinting = async (signer) => {
-  console.log('🎯 Approving student for minting:', formData.registerNumber);
+  // ✅ FIXED: Enhanced approval function with comprehensive error handling
+  const approveStudentForMinting = async (signer) => {
+    console.log('🎯 Approving student for minting:', formData.registerNumber);
 
-  try {
-    const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+    try {
+      const contract = await getContract(signer);
 
-    // Check admin role first
-    const hasAdminRole = await checkAdminRole(signer);
-    if (!hasAdminRole) {
-      throw new Error('Wallet does not have admin privileges');
+      // Check admin role (but don't block if it fails completely)
+      const hasAdminRole = await checkAdminRole(signer);
+      if (!hasAdminRole) {
+        // Give user option to proceed anyway (transaction will fail naturally if not admin)
+        const shouldProceed = window.confirm(
+          'Admin role verification failed. The transaction will fail if your wallet is not an admin. Do you want to proceed anyway?'
+        );
+        
+        if (!shouldProceed) {
+          throw new Error('Transaction cancelled by user');
+        }
+        
+        console.warn('⚠️ Proceeding with transaction despite admin role verification failure');
+      }
+
+      // Generate IPFS hash
+      const ipfsHash = formData.ipfsHash || `Qm${Date.now()}${formData.registerNumber}`;
+
+      console.log('📋 Calling allowStudentToMint with:', {
+        studentId: formData.registerNumber,
+        studentName: formData.name,
+        courseName: formData.course,
+        grade: formData.cgpa,
+        ipfsHash: ipfsHash,
+        certificateType: formData.certificateType
+      });
+
+      // Call the contract function
+      const tx = await contract.allowStudentToMint(
+        formData.registerNumber,
+        formData.name,
+        formData.course, 
+        formData.cgpa,
+        ipfsHash,
+        formData.certificateType
+      );
+
+      console.log('⏳ Transaction sent:', tx.hash);
+      setResult({
+        type: 'info',
+        message: `Transaction submitted... Waiting for confirmation`,
+        data: { transactionHash: tx.hash }
+      });
+
+      const receipt = await tx.wait();
+      console.log('✅ Approval confirmed:', receipt);
+
+      return {
+        transactionHash: receipt.hash,
+        studentId: formData.registerNumber,
+        studentName: formData.name,
+        certificateType: formData.certificateType,
+        ipfsHash
+      };
+
+    } catch (error) {
+      console.error('❌ Blockchain approval error:', error);
+      
+      // Enhanced error handling
+      if (error.message.includes('AccessControlUnauthorizedAccount')) {
+        throw new Error('Your wallet does not have admin privileges. Please use an admin wallet.');
+      } else if (error.message.includes('user rejected')) {
+        throw new Error('Transaction was rejected by user. Please approve the transaction in MetaMask.');
+      } else if (error.message.includes('insufficient funds')) {
+        throw new Error('Insufficient funds for transaction. Please add ETH to your wallet.');
+      } else if (error.message.includes('nonce')) {
+        throw new Error('Transaction nonce error. Please reset your MetaMask account.');
+      } else {
+        throw new Error(`Blockchain transaction failed: ${error.reason || error.message}`);
+      }
     }
+  };
 
-    // 🔥 Set IPFS Hash
-    const ipfsHash = formData.ipfsHash || `Qm${Date.now()}${formData.registerNumber}`;
-
-    console.log('📋 Calling allowStudentToMint with:', {
-      studentId: formData.registerNumber,
-      studentName: formData.name,
-      courseName: formData.course,
-      grade: formData.cgpa,
-      ipfsHash: ipfsHash,
-      certificateType: formData.certificateType
-    });
-
-    // ✅ CALL THE CORRECT FUNCTION: allowStudentToMint
-    const tx = await contract.allowStudentToMint(
-      formData.registerNumber,           // _studentId
-      formData.name,                     // _studentName
-      formData.course,                   // _courseName
-      formData.cgpa,                     // _grade
-      ipfsHash,                          // _ipfsHash
-      formData.certificateType           // _certificateType
-    );
-
-    console.log('⏳ Transaction sent:', tx.hash);
-    setResult({
-      type: 'info',
-      message: `Transaction submitted... Waiting for confirmation`,
-      data: { transactionHash: tx.hash }
-    });
-
-    const receipt = await tx.wait();
-    console.log('✅ Approval confirmed:', receipt);
-
-    return {
-      transactionHash: receipt.hash,
-      studentId: formData.registerNumber,
-      studentName: formData.name,
-      certificateType: formData.certificateType,
-      ipfsHash
-    };
-
-  } catch (error) {
-    console.error('❌ Blockchain approval error:', error);
-    
-    // Handle specific errors
-    if (error.message.includes('AccessControlUnauthorizedAccount')) {
-      throw new Error('Your wallet does not have permission to approve students. Please use an admin wallet.');
-    } else if (error.message.includes('student already eligible')) {
-      throw new Error(`Student is already approved for ${formData.certificateType} certificate.`);
-    } else if (error.message.includes('user rejected')) {
-      throw new Error('Transaction was rejected by user.');
-    } else {
-      throw new Error(`Blockchain approval failed: ${error.message}`);
-    }
-  }
-};
-
+  // ✅ FIXED: Main submit handler with enhanced error handling
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setResult(null);
 
     try {
-      console.log('🚀 Starting certificate approval...');
+      console.log('🚀 Starting certificate approval process...');
 
+      // Validate required fields
       if (!formData.name || !formData.registerNumber || !formData.course || !formData.degree || !formData.cgpa) {
-        throw new Error('Please fill in all required fields');
+        throw new Error('Please fill in all required fields (Name, Register Number, Course, Degree, CGPA)');
       }
 
-      // Check if student already has this certificate type in backend
+      // Check if student already has this certificate in backend
       const student = students.find(s => s.registerNumber === formData.registerNumber);
       if (student && checkIfCertificateExists(student, formData.certificateType)) {
-        throw new Error(`Student already has a ${formData.certificateType} certificate minted. Cannot approve again.`);
+        throw new Error(`Student ${formData.registerNumber} already has a ${formData.certificateType} certificate. Cannot approve again.`);
       }
 
+      // Connect wallet if not connected
       let currentSigner = signer;
-      if (!currentSigner) {
+      if (!currentSigner || !walletConnected) {
         const connection = await connectWallet();
         if (!connection) {
-          throw new Error('Wallet connection failed');
+          throw new Error('Wallet connection failed. Please connect your MetaMask wallet.');
         }
         currentSigner = connection.signer;
       }
 
-      // ✅ FIX: Skip eligibility check if it fails, don't block approval
-      console.log('🔍 Checking current student eligibility...');
+      // Check eligibility (but don't block if it fails)
+      console.log('🔍 Checking student eligibility...');
       try {
         const eligibility = await checkStudentEligibility(formData.registerNumber, formData.certificateType);
-
+        
         if (eligibility && eligibility.canMint) {
-          throw new Error(`Student is already approved for ${formData.certificateType} certificate minting. They can now mint their own certificate.`);
+          throw new Error(`Student ${formData.registerNumber} is already approved for ${formData.certificateType} certificate. They can mint their certificate now.`);
         }
       } catch (eligibilityError) {
         console.warn('⚠️ Eligibility check failed, proceeding with approval:', eligibilityError.message);
         // Continue with approval even if eligibility check fails
       }
 
-      // If student is not eligible or eligibility check failed, proceed with approval
-      const result = await approveStudentForMinting(currentSigner);
+      // Approve student on blockchain
+      const blockchainResult = await approveStudentForMinting(currentSigner);
 
       // Update backend after successful blockchain approval
       try {
         console.log('🔄 Updating backend with approval status...');
         const backendResponse = await studentAPI.approveStudent(formData.registerNumber, {
           certificateType: formData.certificateType,
-          transactionHash: result.transactionHash,
-          ipfsHash: result.ipfsHash,
+          transactionHash: blockchainResult.transactionHash,
+          ipfsHash: blockchainResult.ipfsHash,
           approvedBy: currentAccount,
-          approvedAt: new Date().toISOString()
+          approvedAt: new Date().toISOString(),
+          status: 'approved'
         });
 
         if (backendResponse.data.success) {
@@ -375,30 +524,30 @@ const approveStudentForMinting = async (signer) => {
       } catch (backendError) {
         console.error('⚠️ Backend update failed:', backendError);
         // Don't throw error - blockchain transaction succeeded
-        // Just show a warning to the user
         setResult({
           type: 'warning',
           message: `Student approved on blockchain but backend update failed: ${backendError.response?.data?.error || backendError.message}`,
           data: {
-            studentId: result.studentId,
-            studentName: result.studentName,
-            certificateType: result.certificateType,
-            transactionHash: result.transactionHash,
+            studentId: blockchainResult.studentId,
+            studentName: blockchainResult.studentName,
+            certificateType: blockchainResult.certificateType,
+            transactionHash: blockchainResult.transactionHash,
             note: 'Student can mint certificate, but backend record may be incomplete.'
           }
         });
-        return; // Exit early to prevent form reset
+        return;
       }
 
+      // Success result
       setResult({
         type: 'success',
-        message: `Student successfully approved for ${formData.certificateType} certificate minting!`,
+        message: `Student ${formData.registerNumber} successfully approved for ${formData.certificateType} certificate minting!`,
         data: {
-          studentId: result.studentId,
-          studentName: result.studentName,
-          certificateType: result.certificateType,
-          transactionHash: result.transactionHash,
-          ipfsHash: result.ipfsHash,
+          studentId: blockchainResult.studentId,
+          studentName: blockchainResult.studentName,
+          certificateType: blockchainResult.certificateType,
+          transactionHash: blockchainResult.transactionHash,
+          ipfsHash: blockchainResult.ipfsHash,
           note: 'Student can now mint their certificate using their own wallet.'
         }
       });
@@ -420,8 +569,9 @@ const approveStudentForMinting = async (signer) => {
       });
       setSearchTerm('');
 
+      // Call callback if provided
       if (onCertificateApproved) {
-        onCertificateApproved(result);
+        onCertificateApproved(blockchainResult);
       }
 
       console.log('🎉 Student approval completed successfully!');
@@ -430,14 +580,14 @@ const approveStudentForMinting = async (signer) => {
       console.error('❌ Error approving student:', error);
       setResult({
         type: 'error',
-        message: error.message || 'Failed to approve student'
+        message: error.message || 'Failed to approve student. Please try again.'
       });
     } finally {
       setLoading(false);
     }
   };
 
-  // Debug: Log students data to see the structure
+  // Debug: Log students data
   useEffect(() => {
     console.log('📊 Students data in CertificateForm:', students);
   }, [students]);
@@ -458,6 +608,14 @@ const approveStudentForMinting = async (signer) => {
                 ? `Admin Connected: ${currentAccount?.slice(0, 6)}...${currentAccount?.slice(-4)}`
                 : 'Admin Wallet not connected'
               }
+            </span>
+          </div>
+
+          {/* Environment Indicator */}
+          <div className="mt-2">
+            <span className="text-green-100 text-xs">
+              Environment: {isProduction ? 'Production' : 'Development'} | 
+              ABI: {(isProduction && !isLocalhost) ? 'Simplified' : 'Full'}
             </span>
           </div>
         </div>
@@ -682,12 +840,12 @@ const approveStudentForMinting = async (signer) => {
         <div className={`mt-6 p-4 rounded-md border ${result.type === 'success'
           ? 'bg-green-50 border-green-200 text-green-800'
           : result.type === 'warning'
-            ? 'bg-yellow-50 border-yellow-200 text-yellow-800' // ✅ ADD WARNING STYLE
+            ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
             : 'bg-red-50 border-red-200 text-red-800'
           }`}>
           <div className="flex items-start">
             <div className={`flex-shrink-0 w-5 h-5 mt-0.5 ${result.type === 'success' ? 'text-green-400'
-              : result.type === 'warning' ? 'text-yellow-400' // ✅ ADD WARNING ICON
+              : result.type === 'warning' ? 'text-yellow-400'
                 : 'text-red-400'
               }`}>
               {result.type === 'success' ? '✓' : result.type === 'warning' ? '⚠' : '✗'}
