@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import QRCodeGenerator from '../components/QRCodeGenerator';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -7,7 +7,6 @@ import { contractConfig } from '../config/contractConfig';
 
 const VerificationPortal = () => {
   const { studentId, certificateType } = useParams();
-  const [verificationMethod, setVerificationMethod] = useState('studentId');
   const [inputValue, setInputValue] = useState(studentId || '');
   const [certificateTypeInput, setCertificateTypeInput] = useState(certificateType || 'Degree');
   const [verificationResult, setVerificationResult] = useState(null);
@@ -142,7 +141,8 @@ const VerificationPortal = () => {
     }
   };
 
-  const handleVerification = async () => {
+  // Wrap handleVerification in useCallback to avoid useEffect dependency issues
+  const handleVerification = useCallback(async () => {
     if (!inputValue.trim()) {
       setVerificationResult({
         isValid: false,
@@ -247,7 +247,7 @@ const VerificationPortal = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [inputValue, certificateTypeInput]);
 
   // Handle URL parameters for direct verification
   useEffect(() => {
@@ -259,7 +259,7 @@ const VerificationPortal = () => {
         handleVerification();
       }, 500);
     }
-  }, [studentId, certificateType]);
+  }, [studentId, certificateType, handleVerification]); // Added handleVerification to dependencies
 
   const certificateTypes = [
     { value: 'Degree', label: 'Degree Certificate' },
