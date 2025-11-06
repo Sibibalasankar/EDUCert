@@ -16,6 +16,7 @@ const StudentDashboard = () => {
   const [mintResult, setMintResult] = useState(null);
 
   // Check blockchain status for all certificates
+  // Check blockchain status for all certificates - FIXED VERSION
   const checkBlockchainStatus = useCallback(async (certificates, registerNumber) => {
     if (!registerNumber) {
       console.log('No register number available for blockchain check');
@@ -28,26 +29,15 @@ const StudentDashboard = () => {
 
       for (const certificate of certificates) {
         try {
-          // Check if certificate is already minted on blockchain
+          // Check if certificate is already minted on blockchain using hasStudentMinted
           const hasMinted = await contract.hasStudentMinted(
             registerNumber,
             certificate.certificateType
           );
 
           if (hasMinted) {
-            // Get token ID for minted certificate
-            let tokenId = certificate.tokenId;
-            if (!tokenId) {
-              try {
-                tokenId = await contract.getStudentCertificateTokenId(
-                  registerNumber,
-                  certificate.certificateType
-                );
-              } catch (tokenError) {
-                console.log(`Could not fetch token ID for ${certificate.certificateType}:`, tokenError.message);
-                tokenId = `cert-${registerNumber}-${certificate.certificateType}`;
-              }
-            }
+            // Create deterministic token ID since contract doesn't have token IDs
+            const tokenId = `cert-${registerNumber}-${certificate.certificateType}`;
 
             // If minted on blockchain but not updated in backend, update it
             updatedCertificates.push({
@@ -100,20 +90,20 @@ const StudentDashboard = () => {
   const processStudentCertificates = useCallback(async (student) => {
     try {
       const studentCerts = student.certificates || [];
-      
+
       // First, check blockchain status for all certificates if we have register number
       let certificatesWithBlockchainStatus = studentCerts;
       if (student.studentId) {
         certificatesWithBlockchainStatus = await checkBlockchainStatus(studentCerts, student.studentId);
       }
-      
+
       // Filter approved certificates that haven't been minted on blockchain
-      const approved = certificatesWithBlockchainStatus.filter(c => 
+      const approved = certificatesWithBlockchainStatus.filter(c =>
         c && c.status === 'approved' && !c.blockchainConfirmed
       );
-      
+
       // Filter minted certificates (either status is minted OR blockchainConfirmed is true)
-      const minted = certificatesWithBlockchainStatus.filter(c => 
+      const minted = certificatesWithBlockchainStatus.filter(c =>
         c && (c.status === 'minted' || c.blockchainConfirmed === true)
       );
 
@@ -202,6 +192,7 @@ const StudentDashboard = () => {
   };
 
   // Get token ID for a minted certificate
+  // Get token ID for a minted certificate - FIXED VERSION
   const getTokenIdForCertificate = async (certificate) => {
     if (!studentInfo?.registerNumber) {
       return `cert-${certificate._id}`;
@@ -209,15 +200,45 @@ const StudentDashboard = () => {
 
     try {
       const contract = await getContract();
-      const tokenId = await contract.getStudentCertificateTokenId(
+
+      // Since your contract doesn't use traditional token IDs, create a deterministic ID
+      // Based on student ID and certificate type
+      const tokenId = `cert-${studentInfo.registerNumber}-${certificate.certificateType}`;
+
+      // Verify the certificate actually exists on blockchain
+      try {
+        const certificateData = await contract.getCertificate(
+          studentInfo.registerNumber,
+          certificate.certificateType
+        );
+
+        if (certificateData && certificateData.isMinted) {
+          console.log(`✅ Certificate found on blockchain: ${tokenId}`);
+          return tokenId;
+        }
+      } catch (certError) {
+        console.log(`Certificate data not available for ${certificate.certificateType}:`, certError.message);
+      }
+
+      // Alternative check using hasStudentMinted
+      const hasMinted = await contract.hasStudentMinted(
         studentInfo.registerNumber,
         certificate.certificateType
       );
-      return tokenId.toString();
+
+      if (hasMinted) {
+        console.log(`✅ Student has minted ${certificate.certificateType}: ${tokenId}`);
+        return tokenId;
+      }
+
+      // If not found on blockchain but marked as minted in backend, still return the ID
+      console.log(`⚠️ Certificate not found on blockchain, using fallback ID: ${tokenId}`);
+      return tokenId;
+
     } catch (error) {
-      console.error('Error fetching token ID:', error);
+      console.error('Error in getTokenIdForCertificate:', error);
       // Fallback token ID
-      return `cert-${studentInfo.registerNumber}-${certificate.certificateType}-${Date.now()}`;
+      return `cert-${studentInfo.registerNumber}-${certificate.certificateType}-fallback`;
     }
   };
 
@@ -406,10 +427,10 @@ const StudentDashboard = () => {
         }
 
         // Update UI immediately - remove from approved and add to minted
-        setApprovedCertificates(prev => 
+        setApprovedCertificates(prev =>
           prev.filter(c => c._id !== certificate._id)
         );
-        
+
         const mintedData = {
           ...certificate,
           status: "minted",
@@ -459,12 +480,12 @@ const StudentDashboard = () => {
         const tokenIdMatch = error.message.match(/Token ID: (.+)$/);
         const tokenId = tokenIdMatch ? tokenIdMatch[1] : 'Unknown';
         details = `This certificate type has already been minted on the blockchain. Token ID: ${tokenId}`;
-        
+
         // If already minted, move it to minted section
-        setApprovedCertificates(prev => 
+        setApprovedCertificates(prev =>
           prev.filter(c => c._id !== certificate._id)
         );
-        
+
         const alreadyMintedData = {
           ...certificate,
           status: "minted",
@@ -472,7 +493,7 @@ const StudentDashboard = () => {
           mintedAt: new Date().toISOString(),
           tokenId: tokenId,
         };
-        
+
         setMintedCertificates(prev => [...prev, alreadyMintedData]);
 
         // Also update backend
@@ -532,6 +553,13 @@ const StudentDashboard = () => {
         setLoading(false);
       }
     }
+  };
+
+  // Handle certificate verification
+  const handleVerifyCertificate = (certificate) => {
+    console.log('Verifying certificate:', certificate._id);
+    // You can implement verification logic here or open a modal
+    alert(`Verifying certificate: ${certificate.certificateType}\nToken ID: ${certificate.tokenId}`);
   };
 
   if (!isConnected) {
@@ -627,16 +655,14 @@ const StudentDashboard = () => {
 
         {/* Mint Result */}
         {mintResult && (
-          <div className={`mb-6 p-4 rounded-md border ${
-            mintResult.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
+          <div className={`mb-6 p-4 rounded-md border ${mintResult.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
             mintResult.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
-            'bg-blue-50 border-blue-200 text-blue-800'
-          }`}>
+              'bg-blue-50 border-blue-200 text-blue-800'
+            }`}>
             <div className="flex items-start">
-              <div className={`flex-shrink-0 w-5 h-5 mt-0.5 ${
-                mintResult.type === 'success' ? 'text-green-400' :
+              <div className={`flex-shrink-0 w-5 h-5 mt-0.5 ${mintResult.type === 'success' ? 'text-green-400' :
                 mintResult.type === 'error' ? 'text-red-400' : 'text-blue-400'
-              }`}>
+                }`}>
                 {mintResult.type === 'success' ? '✓' : mintResult.type === 'error' ? '✗' : '⏳'}
               </div>
               <div className="ml-3 flex-1">
@@ -799,69 +825,12 @@ const StudentDashboard = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {mintedCertificates.map((certificate) => (
-                <div key={certificate._id} className="bg-white rounded-lg shadow-md border-2 border-blue-200 hover:border-blue-400 transition-all duration-200">
-                  <div className="p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-bold text-gray-900 text-lg">{certificate.certificateType} Certificate</h3>
-                      <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded-full">
-                        MINTED
-                      </span>
-                    </div>
-
-                    <div className="space-y-2 mb-4">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Student:</span>
-                        <span className="font-medium">{studentInfo?.name}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Register No:</span>
-                        <span className="font-medium">{studentInfo?.registerNumber}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Token ID:</span>
-                        <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
-                          {certificate.tokenId || 'Loading...'}
-                        </span>
-                      </div>
-                      {certificate.mintedAt && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-500">Minted:</span>
-                          <span className="font-medium">
-                            {new Date(certificate.mintedAt).toLocaleDateString()}
-                          </span>
-                        </div>
-                      )}
-                      {certificate.transactionHash && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-500">Transaction:</span>
-                          <span className="font-mono text-xs">
-                            {certificate.transactionHash.slice(0, 6)}...{certificate.transactionHash.slice(-4)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                      <div className="flex items-center">
-                        <svg className="w-4 h-4 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="text-blue-700 text-sm">
-                          This certificate has been successfully minted as an NFT on the blockchain.
-                        </p>
-                      </div>
-                    </div>
-
-                    {certificate.tokenId && (
-                      <div className="text-center">
-                        <span className="text-sm text-gray-600">Token ID: </span>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono">
-                          {certificate.tokenId}
-                        </code>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <CertificateCard
+                  key={certificate._id}
+                  certificate={certificate}
+                  studentInfo={studentInfo}
+                  onVerify={() => handleVerifyCertificate(certificate)}
+                />
               ))}
             </div>
           </div>

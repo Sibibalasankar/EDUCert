@@ -204,24 +204,30 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     checkWalletConnection();
   }, []);
 
-  // ✅ IMPROVED: Better eligibility checking
-  // In CertificateForm.js - Update the checkStudentEligibility function
+  // Add this function to check admin role
+  const checkAdminRole = async (signer) => {
+    try {
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+      const ADMIN_ROLE = await contract.ADMIN_ROLE();
+      const hasAdminRole = await contract.hasRole(ADMIN_ROLE, await signer.getAddress());
+      console.log('🔐 Admin role check:', { hasAdminRole, address: await signer.getAddress() });
+      return hasAdminRole;
+    } catch (error) {
+      console.error('Error checking admin role:', error);
+      return false;
+    }
+  };
+
+
+  // In CertificateForm.js - Update the checkStudentEligibility function:
+
   const checkStudentEligibility = async (studentId, certificateType) => {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum, "any");
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
 
-      // ✅ FIX: Check if canIMint function exists in ABI, if not skip this check
-      const hasCanIMint = CONTRACT_ABI.some(item =>
-        item.name === 'canIMint' && item.type === 'function'
-      );
-
-      if (!hasCanIMint) {
-        console.log('⚠️ canIMint function not found in ABI, skipping eligibility check');
-        return { canMint: false, message: 'Eligibility check not available' };
-      }
-
-      const [canMint, message] = await contract.canIMint(studentId);
+      // ✅ FIX: Use the correct function signature with both parameters
+      const [canMint, message] = await contract.canIMint(studentId, certificateType);
       console.log('🔍 Eligibility check result:', { canMint, message, studentId, certificateType });
 
       // Also check if student already has this certificate type in backend
@@ -241,40 +247,73 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     }
   };
 
-  const approveStudentForMinting = async (signer) => {
-    console.log('🎯 Approving student for minting:', formData.registerNumber);
+const approveStudentForMinting = async (signer) => {
+  console.log('🎯 Approving student for minting:', formData.registerNumber);
 
-    try {
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+  try {
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-      // 🔥 Set IPFS Hash (or use your stored IPFS link from backend/upload)
-      const ipfsHash = formData.ipfsHash || `Qm${Date.now()}${formData.registerNumber}`;
-
-      // ✅ CALL THE CORRECT FUNCTION
-      const tx = await contract.approveCertificate(
-        formData.walletAddress,            // Student wallet address
-        formData.registerNumber,           // Student ID
-        formData.certificateType,          // Certificate Type
-        ipfsHash                           // IPFS Hash
-      );
-
-      console.log('⏳ Transaction sent:', tx.hash);
-      const receipt = await tx.wait();
-      console.log('✅ Approval confirmed:', receipt.hash);
-
-      return {
-        transactionHash: receipt.hash,
-        studentId: formData.registerNumber,
-        studentName: formData.name,
-        certificateType: formData.certificateType,
-        ipfsHash
-      };
-
-    } catch (error) {
-      console.error('❌ Blockchain approval error:', error);
-      throw new Error("Blockchain approval failed. Check wallet & contract state.");
+    // Check admin role first
+    const hasAdminRole = await checkAdminRole(signer);
+    if (!hasAdminRole) {
+      throw new Error('Wallet does not have admin privileges');
     }
-  };
+
+    // 🔥 Set IPFS Hash
+    const ipfsHash = formData.ipfsHash || `Qm${Date.now()}${formData.registerNumber}`;
+
+    console.log('📋 Calling allowStudentToMint with:', {
+      studentId: formData.registerNumber,
+      studentName: formData.name,
+      courseName: formData.course,
+      grade: formData.cgpa,
+      ipfsHash: ipfsHash,
+      certificateType: formData.certificateType
+    });
+
+    // ✅ CALL THE CORRECT FUNCTION: allowStudentToMint
+    const tx = await contract.allowStudentToMint(
+      formData.registerNumber,           // _studentId
+      formData.name,                     // _studentName
+      formData.course,                   // _courseName
+      formData.cgpa,                     // _grade
+      ipfsHash,                          // _ipfsHash
+      formData.certificateType           // _certificateType
+    );
+
+    console.log('⏳ Transaction sent:', tx.hash);
+    setResult({
+      type: 'info',
+      message: `Transaction submitted... Waiting for confirmation`,
+      data: { transactionHash: tx.hash }
+    });
+
+    const receipt = await tx.wait();
+    console.log('✅ Approval confirmed:', receipt);
+
+    return {
+      transactionHash: receipt.hash,
+      studentId: formData.registerNumber,
+      studentName: formData.name,
+      certificateType: formData.certificateType,
+      ipfsHash
+    };
+
+  } catch (error) {
+    console.error('❌ Blockchain approval error:', error);
+    
+    // Handle specific errors
+    if (error.message.includes('AccessControlUnauthorizedAccount')) {
+      throw new Error('Your wallet does not have permission to approve students. Please use an admin wallet.');
+    } else if (error.message.includes('student already eligible')) {
+      throw new Error(`Student is already approved for ${formData.certificateType} certificate.`);
+    } else if (error.message.includes('user rejected')) {
+      throw new Error('Transaction was rejected by user.');
+    } else {
+      throw new Error(`Blockchain approval failed: ${error.message}`);
+    }
+  }
+};
 
   const handleSubmit = async (e) => {
     e.preventDefault();
