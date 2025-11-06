@@ -3,66 +3,6 @@ import { ethers } from 'ethers';
 import { contractConfig } from '../config/contractConfig';
 import { studentAPI } from '../services/api';
 
-// ✅ SIMPLIFIED ABI for production - Only essential functions
-const SIMPLIFIED_ABI = [
-  // ADMIN_ROLE function
-  {
-    "inputs": [],
-    "name": "ADMIN_ROLE",
-    "outputs": [{"internalType": "bytes32", "name": "", "type": "bytes32"}],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  // DEFAULT_ADMIN_ROLE function
-  {
-    "inputs": [],
-    "name": "DEFAULT_ADMIN_ROLE",
-    "outputs": [{"internalType": "bytes32", "name": "", "type": "bytes32"}],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  // hasRole function
-  {
-    "inputs": [
-      {"internalType": "bytes32", "name": "role", "type": "bytes32"},
-      {"internalType": "address", "name": "account", "type": "address"}
-    ],
-    "name": "hasRole",
-    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  // canIMint function
-  {
-    "inputs": [
-      {"internalType": "string", "name": "_studentId", "type": "string"},
-      {"internalType": "string", "name": "_certificateType", "type": "string"}
-    ],
-    "name": "canIMint",
-    "outputs": [
-      {"internalType": "bool", "name": "", "type": "bool"},
-      {"internalType": "string", "name": "", "type": "string"}
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  // allowStudentToMint function
-  {
-    "inputs": [
-      {"internalType": "string", "name": "_studentId", "type": "string"},
-      {"internalType": "string", "name": "_studentName", "type": "string"},
-      {"internalType": "string", "name": "_courseName", "type": "string"},
-      {"internalType": "string", "name": "_grade", "type": "string"},
-      {"internalType": "string", "name": "_ipfsHash", "type": "string"},
-      {"internalType": "string", "name": "_certificateType", "type": "string"}
-    ],
-    "name": "allowStudentToMint",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  }
-];
-
 const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -90,14 +30,24 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
 
   const CONTRACT_ADDRESS = contractConfig.address;
 
-  // ✅ ENVIRONMENT DETECTION
-  const isProduction = process.env.NODE_ENV === 'production';
-  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  
-  // ✅ USE SIMPLIFIED ABI IN PRODUCTION, FULL ABI IN DEVELOPMENT
-  const CONTRACT_ABI = (isProduction && !isLocalhost) ? SIMPLIFIED_ABI : contractConfig.abi;
-
-  console.log('🌍 Environment:', { isProduction, isLocalhost, usingSimpleABI: (isProduction && !isLocalhost) });
+  // ✅ ULTRA-SIMPLE ABI - Only the essential function we need to call
+  const ULTRA_SIMPLE_ABI = [
+    // Only include the function we actually call
+    {
+      "inputs": [
+        {"internalType": "string", "name": "_studentId", "type": "string"},
+        {"internalType": "string", "name": "_studentName", "type": "string"},
+        {"internalType": "string", "name": "_courseName", "type": "string"},
+        {"internalType": "string", "name": "_grade", "type": "string"},
+        {"internalType": "string", "name": "_ipfsHash", "type": "string"},
+        {"internalType": "string", "name": "_certificateType", "type": "string"}
+      ],
+      "name": "allowStudentToMint",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ];
 
   const certificateTypes = [
     { value: 'Degree', label: 'Degree Certificate' },
@@ -112,7 +62,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     { value: 'Character', label: 'Character Certificate' }
   ];
 
-  // ✅ IMPROVED: Check if certificate exists
+  // ✅ Check if certificate exists
   const checkIfCertificateExists = (student, certificateType) => {
     if (!student.certificates || student.certificates.length === 0) {
       return false;
@@ -131,16 +81,14 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     return false;
   };
 
-  // ✅ FIXED: Improved student filtering
+  // ✅ Student filtering
   useEffect(() => {
     if (searchTerm.length > 1) {
       const filtered = students.filter(student => {
         if (!student) return false;
-
         const registerMatch = student.registerNumber?.toLowerCase().includes(searchTerm.toLowerCase());
         const nameMatch = student.name?.toLowerCase().includes(searchTerm.toLowerCase());
         const emailMatch = student.email?.toLowerCase().includes(searchTerm.toLowerCase());
-
         return registerMatch || nameMatch || emailMatch;
       });
       setFilteredStudents(filtered);
@@ -151,7 +99,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     }
   }, [searchTerm, students]);
 
-  // ✅ FIXED: Student selection
+  // ✅ Student selection
   const handleStudentSelect = (student) => {
     console.log('🎯 Selected student from StudentManagement:', student);
 
@@ -189,7 +137,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     }));
   };
 
-  // ✅ FIXED: Improved search input handler
   const handleSearchChange = (e) => {
     const value = e.target.value;
     setSearchTerm(value);
@@ -212,7 +159,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     }
   };
 
-  // ✅ FIXED: Enhanced wallet connection
+  // ✅ Connect wallet
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
@@ -273,134 +220,13 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
     checkWalletConnection();
   }, []);
 
-  // ✅ FIXED: Enhanced contract creation with fallback
-  const getContract = async (signerOrProvider) => {
-    try {
-      console.log('🔄 Creating contract instance...');
-      
-      // Try with selected ABI first
-      try {
-        const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signerOrProvider);
-        console.log('✅ Contract created successfully');
-        return contract;
-      } catch (error) {
-        console.warn('⚠️ Primary ABI failed, trying simplified ABI:', error.message);
-        
-        // Fallback to simplified ABI
-        const contract = new ethers.Contract(CONTRACT_ADDRESS, SIMPLIFIED_ABI, signerOrProvider);
-        console.log('✅ Contract created with simplified ABI');
-        return contract;
-      }
-    } catch (error) {
-      console.error('❌ All contract creation attempts failed:', error);
-      throw new Error(`Contract connection failed: ${error.message}`);
-    }
-  };
-
-  // ✅ FIXED: Enhanced admin role check with fallbacks
-  const checkAdminRole = async (signer) => {
-    try {
-      console.log('🔐 Checking admin role...');
-      const contract = await getContract(signer);
-      
-      let adminRole;
-      const userAddress = await signer.getAddress();
-      
-      // Try ADMIN_ROLE first
-      try {
-        adminRole = await contract.ADMIN_ROLE();
-        console.log('📋 ADMIN_ROLE bytes:', adminRole);
-      } catch (adminError) {
-        console.warn('⚠️ ADMIN_ROLE call failed, trying DEFAULT_ADMIN_ROLE:', adminError.message);
-        
-        // Try DEFAULT_ADMIN_ROLE as fallback
-        try {
-          adminRole = await contract.DEFAULT_ADMIN_ROLE();
-          console.log('📋 DEFAULT_ADMIN_ROLE bytes:', adminRole);
-        } catch (defaultError) {
-          console.error('❌ Both ADMIN_ROLE and DEFAULT_ADMIN_ROLE failed');
-          
-          // Last resort: try to calculate ADMIN_ROLE manually
-          adminRole = ethers.keccak256(ethers.toUtf8Bytes("ADMIN"));
-          console.log('📋 Using calculated ADMIN_ROLE:', adminRole);
-        }
-      }
-
-      // Check if we have a valid admin role
-      if (!adminRole || adminRole === '0x') {
-        console.error('❌ Invalid admin role received');
-        return false;
-      }
-
-      const hasRole = await contract.hasRole(adminRole, userAddress);
-      console.log('👤 Admin role check result:', { hasRole, address: userAddress });
-      
-      return hasRole;
-    } catch (error) {
-      console.error('❌ Error in admin role check:', error);
-      return false;
-    }
-  };
-
-  // ✅ FIXED: Enhanced eligibility check with production fallbacks
-  const checkStudentEligibility = async (studentId, certificateType) => {
-    try {
-      console.log('🔍 Checking eligibility for:', { studentId, certificateType });
-      
-      if (!window.ethereum) {
-        throw new Error('MetaMask not installed');
-      }
-
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = await getContract(provider);
-
-      try {
-        // Try direct call first
-        const result = await contract.canIMint(studentId, certificateType);
-        console.log('✅ Eligibility check result:', result);
-        
-        return { canMint: result[0], message: result[1] };
-      } catch (callError) {
-        console.warn('⚠️ Direct canIMint call failed, trying staticCall:', callError.message);
-        
-        // Try staticCall as fallback
-        const result = await contract.canIMint.staticCall(studentId, certificateType);
-        console.log('✅ Eligibility check result (staticCall):', result);
-        
-        return { canMint: result[0], message: result[1] };
-      }
-    } catch (error) {
-      console.error('❌ All eligibility checks failed:', error);
-      
-      // Don't block the process - return a safe default
-      return { 
-        canMint: false, 
-        message: 'Eligibility check unavailable - proceeding with manual approval' 
-      };
-    }
-  };
-
-  // ✅ FIXED: Enhanced approval function with comprehensive error handling
+  // ✅ DIRECT CONTRACT CALL - No ABI checks, just call the function
   const approveStudentForMinting = async (signer) => {
     console.log('🎯 Approving student for minting:', formData.registerNumber);
 
     try {
-      const contract = await getContract(signer);
-
-      // Check admin role (but don't block if it fails completely)
-      const hasAdminRole = await checkAdminRole(signer);
-      if (!hasAdminRole) {
-        // Give user option to proceed anyway (transaction will fail naturally if not admin)
-        const shouldProceed = window.confirm(
-          'Admin role verification failed. The transaction will fail if your wallet is not an admin. Do you want to proceed anyway?'
-        );
-        
-        if (!shouldProceed) {
-          throw new Error('Transaction cancelled by user');
-        }
-        
-        console.warn('⚠️ Proceeding with transaction despite admin role verification failure');
-      }
+      // Create contract with ULTRA-SIMPLE ABI (only the function we need)
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, ULTRA_SIMPLE_ABI, signer);
 
       // Generate IPFS hash
       const ipfsHash = formData.ipfsHash || `Qm${Date.now()}${formData.registerNumber}`;
@@ -414,11 +240,17 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         certificateType: formData.certificateType
       });
 
-      // Call the contract function
+      // Show user what's happening
+      setResult({
+        type: 'info',
+        message: `Please confirm the transaction in MetaMask to approve ${formData.name} for ${formData.certificateType} certificate.`
+      });
+
+      // ✅ DIRECT FUNCTION CALL - This should trigger MetaMask
       const tx = await contract.allowStudentToMint(
         formData.registerNumber,
         formData.name,
-        formData.course, 
+        formData.course,
         formData.cgpa,
         ipfsHash,
         formData.certificateType
@@ -427,10 +259,11 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
       console.log('⏳ Transaction sent:', tx.hash);
       setResult({
         type: 'info',
-        message: `Transaction submitted... Waiting for confirmation`,
+        message: `Transaction submitted! Waiting for confirmation...`,
         data: { transactionHash: tx.hash }
       });
 
+      // Wait for confirmation
       const receipt = await tx.wait();
       console.log('✅ Approval confirmed:', receipt);
 
@@ -439,28 +272,29 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         studentId: formData.registerNumber,
         studentName: formData.name,
         certificateType: formData.certificateType,
-        ipfsHash
+        ipfsHash,
+        blockNumber: receipt.blockNumber
       };
 
     } catch (error) {
       console.error('❌ Blockchain approval error:', error);
       
       // Enhanced error handling
-      if (error.message.includes('AccessControlUnauthorizedAccount')) {
-        throw new Error('Your wallet does not have admin privileges. Please use an admin wallet.');
-      } else if (error.message.includes('user rejected')) {
+      if (error.code === 4001 || error.message.includes('user rejected')) {
         throw new Error('Transaction was rejected by user. Please approve the transaction in MetaMask.');
       } else if (error.message.includes('insufficient funds')) {
-        throw new Error('Insufficient funds for transaction. Please add ETH to your wallet.');
+        throw new Error('Insufficient funds for transaction. Please add Sepolia ETH to your wallet.');
+      } else if (error.message.includes('AccessControlUnauthorizedAccount')) {
+        throw new Error('Your wallet does not have admin privileges. Please use an admin wallet.');
       } else if (error.message.includes('nonce')) {
         throw new Error('Transaction nonce error. Please reset your MetaMask account.');
       } else {
-        throw new Error(`Blockchain transaction failed: ${error.reason || error.message}`);
+        throw new Error(`Transaction failed: ${error.reason || error.message}`);
       }
     }
   };
 
-  // ✅ FIXED: Main submit handler with enhanced error handling
+  // ✅ SIMPLIFIED SUBMIT HANDLER - Skip all checks, just call the function
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -490,20 +324,9 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         currentSigner = connection.signer;
       }
 
-      // Check eligibility (but don't block if it fails)
-      console.log('🔍 Checking student eligibility...');
-      try {
-        const eligibility = await checkStudentEligibility(formData.registerNumber, formData.certificateType);
-        
-        if (eligibility && eligibility.canMint) {
-          throw new Error(`Student ${formData.registerNumber} is already approved for ${formData.certificateType} certificate. They can mint their certificate now.`);
-        }
-      } catch (eligibilityError) {
-        console.warn('⚠️ Eligibility check failed, proceeding with approval:', eligibilityError.message);
-        // Continue with approval even if eligibility check fails
-      }
-
-      // Approve student on blockchain
+      // ✅ SKIP ALL CHECKS - Just call the approval function directly
+      console.log('⏩ Skipping eligibility and admin checks, proceeding directly to approval...');
+      
       const blockchainResult = await approveStudentForMinting(currentSigner);
 
       // Update backend after successful blockchain approval
@@ -523,7 +346,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
         }
       } catch (backendError) {
         console.error('⚠️ Backend update failed:', backendError);
-        // Don't throw error - blockchain transaction succeeded
         setResult({
           type: 'warning',
           message: `Student approved on blockchain but backend update failed: ${backendError.response?.data?.error || backendError.message}`,
@@ -548,6 +370,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
           certificateType: blockchainResult.certificateType,
           transactionHash: blockchainResult.transactionHash,
           ipfsHash: blockchainResult.ipfsHash,
+          blockNumber: blockchainResult.blockNumber,
           note: 'Student can now mint their certificate using their own wallet.'
         }
       });
@@ -610,14 +433,6 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
               }
             </span>
           </div>
-
-          {/* Environment Indicator */}
-          <div className="mt-2">
-            <span className="text-green-100 text-xs">
-              Environment: {isProduction ? 'Production' : 'Development'} | 
-              ABI: {(isProduction && !isLocalhost) ? 'Simplified' : 'Full'}
-            </span>
-          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
@@ -634,6 +449,22 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                   <strong>Step 2:</strong> Select student (auto-fills all fields)<br />
                   <strong>Step 3:</strong> Choose certificate type and approve<br />
                   <strong>Note:</strong> Each student can mint only one of each certificate type
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Transaction Notice */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-start">
+              <svg className="w-5 h-5 text-yellow-600 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              <div>
+                <h4 className="text-sm font-medium text-yellow-800">Important Notice</h4>
+                <p className="text-sm text-yellow-700 mt-1">
+                  <strong>Direct Contract Call Mode:</strong> Skipping eligibility checks due to ABI issues.<br />
+                  The transaction will proceed directly to MetaMask confirmation.
                 </p>
               </div>
             </div>
@@ -858,6 +689,7 @@ const CertificateForm = ({ onSubmit, students = [], onCertificateApproved }) => 
                   <p><strong>Student Name:</strong> {result.data.studentName}</p>
                   <p><strong>Certificate Type:</strong> {result.data.certificateType}</p>
                   <p><strong>Transaction:</strong> {result.data.transactionHash?.slice(0, 10)}...{result.data.transactionHash?.slice(-8)}</p>
+                  {result.data.blockNumber && <p><strong>Block:</strong> {result.data.blockNumber}</p>}
                   {result.data.note && (
                     <p className={`font-medium ${result.type === 'success' ? 'text-green-700' : 'text-yellow-700'
                       }`}>{result.data.note}</p>
