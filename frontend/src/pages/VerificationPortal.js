@@ -2,144 +2,159 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import QRCodeGenerator from '../components/QRCodeGenerator';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { ethers } from 'ethers';
+import { contractConfig } from '../config/contractConfig';
 
 const VerificationPortal = () => {
-  const { tokenId } = useParams();
-  const [verificationMethod, setVerificationMethod] = useState('token');
-  const [inputValue, setInputValue] = useState(tokenId || '');
+  const { studentId, certificateType } = useParams();
+  const [verificationMethod, setVerificationMethod] = useState('studentId');
+  const [inputValue, setInputValue] = useState(studentId || '');
+  const [certificateTypeInput, setCertificateTypeInput] = useState(certificateType || 'Degree');
   const [verificationResult, setVerificationResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [certificateData, setCertificateData] = useState(null);
 
-  // Function to fetch certificate data from backend
-const fetchCertificateFromBackend = async (method, value) => {
-  try {
-    console.log(`🔍 Verifying certificate via ${method}:`, value);
+  const CONTRACT_ADDRESS = contractConfig.address;
+  const CONTRACT_ABI = contractConfig.abi;
 
-    let endpoint = '';
+  // Multiple RPC providers for fallback
+  const RPC_PROVIDERS = [
+    'https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161', // Your current Infura
+    'https://eth-sepolia.g.alchemy.com/v2/demo', // Alchemy demo (free)
+    'https://rpc.sepolia.org', // Public Sepolia RPC
+    'https://sepolia.drpc.org' // Another public RPC
+  ];
+
+  // Get contract instance with fallback providers
+  const getContract = async () => {
+    let lastError = null;
     
-    switch (method) {
-      case 'token':
-        endpoint = `http://localhost:5000/api/certificates/${value}`;
-        break;
-      case 'register':
-        // For student registration number, we'll use the main certificates endpoint
-        // and filter on the backend
-        endpoint = `http://localhost:5000/api/certificates?registerNumber=${value}`;
-        break;
-      case 'transaction':
-        // For transaction hash, we'll use the main certificates endpoint
-        // and filter on the backend
-        endpoint = `http://localhost:5000/api/certificates?transactionHash=${value}`;
-        break;
-      default:
-        throw new Error('Invalid verification method');
-    }
-
-    console.log('📞 Calling endpoint:', endpoint);
-
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      // Add timeout
-      signal: AbortSignal.timeout(10000) // 10 second timeout
-    });
-    
-    console.log('📨 Response status:', response.status);
-
-    if (response.status === 404) {
-      throw new Error('Certificate not found');
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Backend error:', errorText);
-      throw new Error(`Server error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log('✅ Certificate data received:', data);
-    
-    if (!data || Object.keys(data).length === 0) {
-      throw new Error('Empty response from server');
-    }
-
-    return data;
-
-  } catch (error) {
-    console.error('❌ Error fetching certificate:', error);
-    
-    // Enhanced error messages
-    if (error.name === 'TimeoutError') {
-      throw new Error('Backend server is not responding. Please ensure the backend is running on port 5000.');
-    } else if (error.message.includes('Failed to fetch')) {
-      throw new Error('Cannot connect to backend server. Make sure the server is running on http://localhost:5000');
-    } else if (error.message.includes('Certificate not found')) {
-      throw new Error(`No certificate found with the provided ${verificationMethod}`);
-    } else {
-      throw error;
-    }
-  }
-};
-  // Function to verify certificate validity
-  const verifyCertificateValidity = async (certificateData) => {
-    try {
-      // Check if certificate is revoked
-      if (certificateData.isRevoked) {
-        return {
-          isValid: false,
-          message: 'Certificate has been revoked and is no longer valid.'
-        };
-      }
-
-      // Verify certificate on blockchain (if verify endpoint exists)
+    for (const rpcUrl of RPC_PROVIDERS) {
       try {
-        const verifyResponse = await fetch(`http://localhost:5000/api/certificates/verify/${certificateData.tokenId}`);
-        if (verifyResponse.ok) {
-          const verifyData = await verifyResponse.json();
-          if (!verifyData.valid) {
-            return {
-              isValid: false,
-              message: 'Certificate verification failed on blockchain.'
-            };
-          }
-        }
-      } catch (verifyError) {
-        console.warn('⚠️ Certificate verification endpoint not available:', verifyError);
-        // Continue with basic validation if verification endpoint is not available
+        console.log(`🔗 Trying RPC: ${rpcUrl}`);
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        
+        // Test the connection
+        await provider.getNetwork();
+        console.log(`✅ Connected to ${rpcUrl}`);
+        
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+        return contract;
+      } catch (error) {
+        console.warn(`❌ Failed to connect to ${rpcUrl}:`, error.message);
+        lastError = error;
+        continue; // Try next provider
       }
+    }
+    
+    throw new Error(`All RPC providers failed. Last error: ${lastError?.message}`);
+  };
 
-      // Check if issue date is in the future (invalid)
-      const issueDate = new Date(certificateData.issueDate);
-      const now = new Date();
-      if (issueDate > now) {
-        return {
-          isValid: false,
-          message: 'Certificate issue date is in the future (invalid).'
-        };
+  // Function to verify certificate on blockchain
+  const verifyCertificateOnBlockchain = async (studentId, certificateType) => {
+    try {
+      console.log(`🔍 Verifying certificate on blockchain:`, { studentId, certificateType });
+
+      const contract = await getContract();
+
+      // Use verifyCertificate function from your contract
+      const verification = await contract.verifyCertificate(studentId, certificateType);
+      
+      console.log('📊 Blockchain verification result:', verification);
+
+      const [
+        exists,
+        studentName,
+        courseName,
+        grade,
+        ipfsHash,
+        issueDate,
+        mintedBy
+      ] = verification;
+
+      if (!exists) {
+        throw new Error('Certificate not found on blockchain');
       }
 
       return {
-        isValid: true,
+        exists,
+        studentName,
+        courseName,
+        grade,
+        ipfsHash,
+        issueDate: Number(issueDate),
+        mintedBy,
+        isValid: exists,
         message: 'Certificate verified successfully on blockchain!'
       };
 
     } catch (error) {
-      console.error('❌ Error in certificate validation:', error);
-      return {
-        isValid: false,
-        message: 'Certificate validation failed.'
-      };
+      console.error('❌ Blockchain verification error:', error);
+      
+      if (error.message.includes('Certificate not found')) {
+        throw new Error('Certificate not found on blockchain');
+      } else if (error.message.includes('call revert')) {
+        throw new Error('Certificate does not exist or is not minted');
+      } else if (error.message.includes('All RPC providers failed')) {
+        throw new Error('Unable to connect to blockchain network. Please try again later.');
+      } else {
+        throw new Error(`Blockchain verification failed: ${error.message}`);
+      }
     }
   };
 
-  const handleVerification = async (method = verificationMethod, value = inputValue) => {
-    if (!value.trim()) {
+  // Function to get student eligibility info
+  const getStudentEligibility = async (studentId, certificateType) => {
+    try {
+      const contract = await getContract();
+      const eligibility = await contract.getStudentEligibility(studentId, certificateType);
+      
+      const [
+        isEligible,
+        studentName,
+        courseName,
+        grade,
+        hasMinted
+      ] = eligibility;
+
+      return {
+        isEligible,
+        studentName,
+        courseName,
+        grade,
+        hasMinted
+      };
+    } catch (error) {
+      console.error('Error fetching eligibility:', error);
+      return null;
+    }
+  };
+
+  // Function to check if student has minted
+  const hasStudentMinted = async (studentId, certificateType) => {
+    try {
+      const contract = await getContract();
+      const hasMinted = await contract.hasStudentMinted(studentId, certificateType);
+      return hasMinted;
+    } catch (error) {
+      console.error('Error checking mint status:', error);
+      return false;
+    }
+  };
+
+  const handleVerification = async () => {
+    if (!inputValue.trim()) {
       setVerificationResult({
         isValid: false,
-        message: 'Please enter a value to verify'
+        message: 'Please enter a Student ID to verify'
+      });
+      return;
+    }
+
+    if (!certificateTypeInput.trim()) {
+      setVerificationResult({
+        isValid: false,
+        message: 'Please select a certificate type'
       });
       return;
     }
@@ -149,51 +164,79 @@ const fetchCertificateFromBackend = async (method, value) => {
     setCertificateData(null);
 
     try {
-      // Fetch certificate data from backend
-      const certificate = await fetchCertificateFromBackend(method, value);
-      
-      // Verify certificate validity
-      const verification = await verifyCertificateValidity(certificate);
+      const studentId = inputValue.trim();
+      const certificateType = certificateTypeInput;
 
-      setVerificationResult(verification);
+      console.log(`🔍 Starting verification for:`, { studentId, certificateType });
+
+      // First, check if student has minted this certificate
+      const hasMinted = await hasStudentMinted(studentId, certificateType);
       
-      if (verification.isValid) {
-        // Transform backend data to frontend format
+      if (!hasMinted) {
+        // Check if student is eligible but hasn't minted
+        const eligibility = await getStudentEligibility(studentId, certificateType);
+        
+        if (eligibility && eligibility.isEligible) {
+          setVerificationResult({
+            isValid: false,
+            message: `Certificate is approved but not yet minted by student. Student can mint their ${certificateType} certificate.`
+          });
+        } else {
+          setVerificationResult({
+            isValid: false,
+            message: `No ${certificateType} certificate found for student ${studentId}. Certificate may not be approved or minted.`
+          });
+        }
+        return;
+      }
+
+      // If minted, verify on blockchain
+      const blockchainData = await verifyCertificateOnBlockchain(studentId, certificateType);
+
+      if (blockchainData.exists) {
+        // Transform blockchain data to frontend format
         const transformedData = {
-          studentName: certificate.studentName,
-          registerNumber: certificate.registerNumber,
-          course: certificate.course,
-          degree: certificate.degree,
-          cgpa: certificate.cgpa,
-          certificateType: certificate.certificateType,
-          issueDate: typeof certificate.issueDate === 'string' 
-            ? Math.floor(new Date(certificate.issueDate).getTime() / 1000)
-            : certificate.issueDate,
-          tokenId: certificate.tokenId || value,
-          transactionHash: certificate.transactionHash || `0x${Math.random().toString(16).substr(2, 64)}`,
-          ipfsHash: certificate.ipfsHash || 'Qm' + Math.random().toString(36).substr(2, 44),
-          department: certificate.department,
-          batch: certificate.batch,
-          yearOfPassing: certificate.yearOfPassing,
-          isRevoked: certificate.isRevoked || false
+          studentName: blockchainData.studentName,
+          registerNumber: studentId,
+          course: blockchainData.courseName,
+          degree: 'B.Tech', // You might want to store this differently
+          cgpa: blockchainData.grade,
+          certificateType: certificateType,
+          issueDate: blockchainData.issueDate,
+          tokenId: `cert-${studentId}-${certificateType}`, // Create deterministic token ID
+          transactionHash: 'Blockchain Verified', // Your contract doesn't store TX hash
+          ipfsHash: blockchainData.ipfsHash,
+          department: 'Computer Science', // You might want to store this
+          batch: '2024',
+          yearOfPassing: new Date(blockchainData.issueDate * 1000).getFullYear(),
+          mintedBy: blockchainData.mintedBy,
+          isRevoked: false
         };
         
         setCertificateData(transformedData);
+        setVerificationResult({
+          isValid: true,
+          message: 'Certificate verified successfully on blockchain!'
+        });
+      } else {
+        setVerificationResult({
+          isValid: false,
+          message: 'Certificate not found on blockchain'
+        });
       }
 
     } catch (error) {
       console.error('❌ Verification error:', error);
       
-      // Handle specific error cases
-      if (error.message.includes('not found') || error.message.includes('404')) {
+      if (error.message.includes('Certificate not found') || error.message.includes('does not exist')) {
         setVerificationResult({
           isValid: false,
-          message: 'Certificate not found on blockchain. Please check the identifier and try again.'
+          message: `No ${certificateTypeInput} certificate found for student ${inputValue}. Certificate may not be minted yet.`
         });
-      } else if (error.message.includes('Failed to fetch')) {
+      } else if (error.message.includes('Unable to connect to blockchain')) {
         setVerificationResult({
           isValid: false,
-          message: 'Unable to connect to verification service. Please ensure the backend server is running on port 5000.'
+          message: 'Unable to connect to blockchain network. Please check your internet connection and try again.'
         });
       } else {
         setVerificationResult({
@@ -206,41 +249,30 @@ const fetchCertificateFromBackend = async (method, value) => {
     }
   };
 
-  // Handle URL token verification
+  // Handle URL parameters for direct verification
   useEffect(() => {
-    if (tokenId) {
-      setInputValue(tokenId);
-      setVerificationMethod('token');
-      handleVerification('token', tokenId);
+    if (studentId && certificateType) {
+      setInputValue(studentId);
+      setCertificateTypeInput(certificateType);
+      // Auto-verify if both parameters are provided
+      setTimeout(() => {
+        handleVerification();
+      }, 500);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tokenId]);
+  }, [studentId, certificateType]);
 
-  const getInputPlaceholder = () => {
-    switch (verificationMethod) {
-      case 'token':
-        return 'Enter Token ID (e.g., 1, 2, 3...)';
-      case 'register':
-        return 'Enter Register Number (e.g., 21AI001, 21CS002)';
-      case 'transaction':
-        return 'Enter Transaction Hash (e.g., 0x4af...91d3)';
-      default:
-        return '';
-    }
-  };
-
-  const getInputLabel = () => {
-    switch (verificationMethod) {
-      case 'token':
-        return 'Token ID';
-      case 'register':
-        return 'Register Number';
-      case 'transaction':
-        return 'Transaction Hash';
-      default:
-        return '';
-    }
-  };
+  const certificateTypes = [
+    { value: 'Degree', label: 'Degree Certificate' },
+    { value: 'Provisional', label: 'Provisional Certificate' },
+    { value: 'ConsolidatedMarksheet', label: 'Consolidated Marksheet' },
+    { value: 'CourseCompletion', label: 'Course Completion Certificate' },
+    { value: 'Transcript', label: 'Academic Transcript' },
+    { value: 'Diploma', label: 'Diploma Certificate' },
+    { value: 'RankCertificate', label: 'Rank Certificate' },
+    { value: 'Participation', label: 'Participation Certificate' },
+    { value: 'Merit', label: 'Merit Certificate' },
+    { value: 'Character', label: 'Character Certificate' }
+  ];
 
   const handleInputChange = (e) => {
     setInputValue(e.target.value);
@@ -251,11 +283,13 @@ const fetchCertificateFromBackend = async (method, value) => {
     }
   };
 
-  const handleMethodChange = (method) => {
-    setVerificationMethod(method);
-    setInputValue('');
-    setVerificationResult(null);
-    setCertificateData(null);
+  const handleCertificateTypeChange = (e) => {
+    setCertificateTypeInput(e.target.value);
+    // Clear previous results when certificate type changes
+    if (verificationResult) {
+      setVerificationResult(null);
+      setCertificateData(null);
+    }
   };
 
   // Format date for display
@@ -263,18 +297,23 @@ const fetchCertificateFromBackend = async (method, value) => {
     if (!timestamp) return 'Unknown';
     
     try {
-      const date = typeof timestamp === 'string' 
-        ? new Date(timestamp) 
-        : new Date(timestamp * 1000);
-      
+      const date = new Date(timestamp * 1000);
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
-        day: 'numeric'
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
       });
     } catch (error) {
       return 'Invalid Date';
     }
+  };
+
+  // Format address for display
+  const formatAddress = (address) => {
+    if (!address) return 'Unknown';
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
   return (
@@ -282,98 +321,68 @@ const fetchCertificateFromBackend = async (method, value) => {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Certificate Verification</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Blockchain Certificate Verification</h1>
           <p className="text-lg text-gray-600">
             Verify the authenticity of academic certificates on the blockchain
           </p>
+          <div className="mt-4 inline-flex items-center px-3 py-1 rounded-full bg-green-100 text-green-800 text-sm font-medium">
+            <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
+            No Wallet Required - Public Verification
+          </div>
         </div>
 
-        {/* Verification Methods */}
+        {/* Verification Input */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <button
-              onClick={() => handleMethodChange('token')}
-              className={`p-4 border-2 rounded-lg text-left transition-colors duration-200 ${
-                verificationMethod === 'token'
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center">
-                <div className={`w-3 h-3 rounded-full mr-3 ${
-                  verificationMethod === 'token' ? 'bg-blue-500' : 'bg-gray-300'
-                }`}></div>
-                <span className="font-medium">By Token ID</span>
-              </div>
-              <p className="text-sm text-gray-600 mt-1">Verify using certificate token ID</p>
-            </button>
-
-            <button
-              onClick={() => handleMethodChange('register')}
-              className={`p-4 border-2 rounded-lg text-left transition-colors duration-200 ${
-                verificationMethod === 'register'
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center">
-                <div className={`w-3 h-3 rounded-full mr-3 ${
-                  verificationMethod === 'register' ? 'bg-blue-500' : 'bg-gray-300'
-                }`}></div>
-                <span className="font-medium">By Register Number</span>
-              </div>
-              <p className="text-sm text-gray-600 mt-1">Verify using student register number</p>
-            </button>
-
-            <button
-              onClick={() => handleMethodChange('transaction')}
-              className={`p-4 border-2 rounded-lg text-left transition-colors duration-200 ${
-                verificationMethod === 'transaction'
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center">
-                <div className={`w-3 h-3 rounded-full mr-3 ${
-                  verificationMethod === 'transaction' ? 'bg-blue-500' : 'bg-gray-300'
-                }`}></div>
-                <span className="font-medium">By Transaction</span>
-              </div>
-              <p className="text-sm text-gray-600 mt-1">Verify using blockchain transaction hash</p>
-            </button>
-          </div>
-
-          {/* Input Section */}
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                {getInputLabel()}
+                Student Register Number *
               </label>
-              <div className="flex space-x-4">
-                <input
-                  type="text"
-                  value={inputValue}
-                  onChange={handleInputChange}
-                  placeholder={getInputPlaceholder()}
-                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  onKeyPress={(e) => e.key === 'Enter' && handleVerification()}
-                />
-                <button
-                  onClick={() => handleVerification()}
-                  disabled={loading || !inputValue.trim()}
-                  className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors duration-200"
-                >
-                  {loading ? (
-                    <div className="flex items-center">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                      Verifying...
-                    </div>
-                  ) : (
-                    'Verify'
-                  )}
-                </button>
-              </div>
+              <input
+                type="text"
+                value={inputValue}
+                onChange={handleInputChange}
+                placeholder="Enter Student Register Number (e.g., 23AIB67, 21CS001)"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onKeyPress={(e) => e.key === 'Enter' && handleVerification()}
+              />
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Certificate Type *
+              </label>
+              <select
+                value={certificateTypeInput}
+                onChange={handleCertificateTypeChange}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {certificateTypes.map(type => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-center">
+            <button
+              onClick={handleVerification}
+              disabled={loading || !inputValue.trim() || !certificateTypeInput.trim()}
+              className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors duration-200"
+            >
+              {loading ? (
+                <div className="flex items-center">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                  Verifying on Blockchain...
+                </div>
+              ) : (
+                'Verify Certificate'
+              )}
+            </button>
           </div>
         </div>
 
@@ -434,20 +443,15 @@ const fetchCertificateFromBackend = async (method, value) => {
                     </div>
                     
                     <div>
-                      <label className="text-sm font-medium text-gray-500">Degree</label>
-                      <p className="text-gray-900">{certificateData.degree}</p>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-gray-500">Department</label>
-                      <p className="text-gray-900">{certificateData.department || 'Not specified'}</p>
+                      <label className="text-sm font-medium text-gray-500">CGPA/Grade</label>
+                      <p className="text-lg font-semibold text-gray-900">{certificateData.cgpa}</p>
                     </div>
                   </div>
 
                   <div className="space-y-4">
                     <div>
-                      <label className="text-sm font-medium text-gray-500">CGPA</label>
-                      <p className="text-lg font-semibold text-gray-900">{certificateData.cgpa}</p>
+                      <label className="text-sm font-medium text-gray-500">Certificate Type</label>
+                      <p className="text-gray-900">{certificateData.certificateType}</p>
                     </div>
                     
                     <div>
@@ -456,27 +460,19 @@ const fetchCertificateFromBackend = async (method, value) => {
                         {formatDate(certificateData.issueDate)}
                       </p>
                     </div>
-                    
-                    <div>
-                      <label className="text-sm font-medium text-gray-500">Certificate Type</label>
-                      <p className="text-gray-900">{certificateData.certificateType}</p>
-                    </div>
 
                     <div>
-                      <label className="text-sm font-medium text-gray-500">Batch</label>
-                      <p className="text-gray-900">{certificateData.batch || 'Not specified'}</p>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-gray-500">Year of Passing</label>
-                      <p className="text-gray-900">{certificateData.yearOfPassing || 'Not specified'}</p>
+                      <label className="text-sm font-medium text-gray-500">Minted By</label>
+                      <p className="text-gray-900 font-mono text-sm">
+                        {formatAddress(certificateData.mintedBy)}
+                      </p>
                     </div>
 
                     <div>
                       <label className="text-sm font-medium text-gray-500">Verification QR</label>
                       <div className="mt-2">
                         <QRCodeGenerator 
-                          data={`${window.location.origin}/verify/${certificateData.tokenId}`}
+                          data={`${window.location.origin}/verify/${certificateData.registerNumber}/${certificateData.certificateType}`}
                           size={100}
                         />
                       </div>
@@ -484,19 +480,25 @@ const fetchCertificateFromBackend = async (method, value) => {
                   </div>
                 </div>
 
-                {/* Blockchain Links */}
+                {/* Blockchain Information */}
                 <div className="mt-6 pt-6 border-t border-gray-200">
-                  <h4 className="text-sm font-medium text-gray-500 mb-3">Blockchain Information</h4>
+                  <h4 className="text-sm font-medium text-gray-500 mb-3">Blockchain Verification</h4>
                   <div className="flex flex-wrap gap-4">
-                    <div className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded text-gray-700 bg-white">
-                      <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <div className="inline-flex items-center px-3 py-2 border border-green-300 text-sm font-medium rounded text-green-700 bg-green-50">
+                      <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                       </svg>
-                      Token ID: {certificateData.tokenId}
+                      Verified on Blockchain
+                    </div>
+                    <div className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded text-gray-700 bg-white">
+                      <svg className="w-4 h-4 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Student ID: {certificateData.registerNumber}
                     </div>
                     <button
                       onClick={() => {
-                        navigator.clipboard.writeText(`${window.location.origin}/verify/${certificateData.tokenId}`);
+                        navigator.clipboard.writeText(`${window.location.origin}/verify/${certificateData.registerNumber}/${certificateData.certificateType}`);
                         alert('Verification link copied to clipboard!');
                       }}
                       className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -515,34 +517,49 @@ const fetchCertificateFromBackend = async (method, value) => {
 
         {/* How it works */}
         <div className="bg-white rounded-lg shadow-sm p-6 mt-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">How Verification Works</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">How Blockchain Verification Works</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="text-center">
               <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <span className="text-blue-600 font-bold">1</span>
               </div>
-              <h4 className="font-medium text-gray-900 mb-2">Enter Identifier</h4>
+              <h4 className="font-medium text-gray-900 mb-2">Enter Details</h4>
               <p className="text-sm text-gray-600">
-                Use Token ID, Register Number, or Transaction Hash to verify
+                Provide Student Register Number and Certificate Type
               </p>
             </div>
             <div className="text-center">
               <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <span className="text-blue-600 font-bold">2</span>
               </div>
-              <h4 className="font-medium text-gray-900 mb-2">Blockchain Check</h4>
+              <h4 className="font-medium text-gray-900 mb-2">Blockchain Query</h4>
               <p className="text-sm text-gray-600">
-                System queries the blockchain to verify certificate authenticity
+                System queries the Sepolia blockchain for certificate data
               </p>
             </div>
             <div className="text-center">
               <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <span className="text-blue-600 font-bold">3</span>
               </div>
-              <h4 className="font-medium text-gray-900 mb-2">Get Results</h4>
+              <h4 className="font-medium text-gray-900 mb-2">Instant Result</h4>
               <p className="text-sm text-gray-600">
-                Receive instant verification with detailed certificate information
+                Get verified certificate details directly from blockchain
               </p>
+            </div>
+          </div>
+          
+          <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+            <div className="flex items-start">
+              <svg className="w-5 h-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div>
+                <h4 className="text-sm font-medium text-blue-800">Note</h4>
+                <p className="text-sm text-blue-700 mt-1">
+                  This portal only verifies certificates that have been <strong>minted on the blockchain</strong>. 
+                  Approved but not-yet-minted certificates will show as not found. Students need to mint their approved certificates to make them publicly verifiable.
+                </p>
+              </div>
             </div>
           </div>
         </div>
